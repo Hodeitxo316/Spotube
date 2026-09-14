@@ -1,14 +1,30 @@
 // src/screens/PlayerScreen.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import TrackPlayer, { useActiveTrack, useIsPlaying, useProgress } from 'react-native-track-player';
 import { COLORS } from '../constants/theme';
 import { promoteToPermanentAndSave } from '../services/cacheManager';
+import { fetchSyncedLyrics } from '../services/lyricsService';
+import { LyricLine } from '../utils/lrcParser';
+import { SyncedLyricsView } from '../components/SyncedLyricsView';
 
 export const PlayerScreen = () => {
   const activeTrack = useActiveTrack();
   const { playing } = useIsPlaying();
   const { position, duration } = useProgress();
+
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [lyrics, setLyrics] = useState<LyricLine[]>([]);
+
+  useEffect(() => {
+    if (activeTrack) {
+      fetchSyncedLyrics(
+        activeTrack.title || '',
+        activeTrack.artist || '',
+        activeTrack.duration || duration
+      ).then(setLyrics);
+    }
+  }, [activeTrack?.id]);
 
   if (!activeTrack) return null;
 
@@ -30,7 +46,18 @@ export const PlayerScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Image source={{ uri: activeTrack.artwork }} style={styles.cover} />
+      <TouchableOpacity style={styles.toggleViewButton} onPress={() => setShowLyrics(!showLyrics)}>
+        <Text style={styles.toggleViewText}>{showLyrics ? '🖼 Ver Carátula' : '🎤 Ver Letras'}</Text>
+      </TouchableOpacity>
+
+      {showLyrics ? (
+        <View style={styles.lyricsContainer}>
+          <SyncedLyricsView lyrics={lyrics} currentTime={position} />
+        </View>
+      ) : (
+        <Image source={{ uri: activeTrack.artwork }} style={styles.cover} />
+      )}
+
       <View style={styles.header}>
         <Text style={styles.title} numberOfLines={1}>{activeTrack.title}</Text>
         <Text style={styles.artist}>{activeTrack.artist}</Text>
@@ -68,15 +95,18 @@ export const PlayerScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background, padding: 24, justifyContent: 'center' },
-  cover: { width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 24 },
-  header: { marginBottom: 20 },
+  toggleViewButton: { alignSelf: 'flex-end', marginBottom: 12, padding: 6 },
+  toggleViewText: { color: COLORS.primary, fontWeight: 'bold' },
+  cover: { width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 20 },
+  lyricsContainer: { width: '100%', height: 300, marginBottom: 20 },
+  header: { marginBottom: 16 },
   title: { color: COLORS.textPrimary, fontSize: 22, fontWeight: 'bold' },
   artist: { color: COLORS.textSecondary, fontSize: 16, marginTop: 4 },
   progressContainer: { height: 4, backgroundColor: COLORS.surfaceLight, borderRadius: 2, overflow: 'hidden' },
   progressBar: { height: '100%', backgroundColor: COLORS.primary },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   timeText: { color: COLORS.textSecondary, fontSize: 12 },
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginVertical: 24 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginVertical: 20 },
   controlIcon: { color: COLORS.textPrimary, fontSize: 28 },
   mainButton: { backgroundColor: COLORS.primary, width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center' },
   mainIcon: { color: COLORS.textPrimary, fontSize: 28 },
