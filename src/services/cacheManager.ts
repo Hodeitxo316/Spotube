@@ -1,5 +1,7 @@
 // src/services/cacheManager.ts
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import { saveTrackToLocalDb } from '../database/trackRepository';
+import { TrackItem } from '../types/track';
 
 const { dirs } = ReactNativeBlobUtil.fs;
 const CACHE_DIR = `${dirs.CacheDir}/audio_cache`;
@@ -41,13 +43,12 @@ export const cacheAudioStream = async (trackId: string, streamUrl: string): Prom
   await ensureDirectoriesExist();
   const cachePath = `${CACHE_DIR}/${trackId}.m4a`;
 
-  // Descarga progresiva al directorio de caché
   ReactNativeBlobUtil.config({
     path: cachePath,
     fileCache: true,
   })
     .fetch('GET', streamUrl)
-    .then((res) => {
+    .then(() => {
       console.log(`Pista ${trackId} guardada exitosamente en la caché temporal.`);
     })
     .catch((err) => {
@@ -58,23 +59,23 @@ export const cacheAudioStream = async (trackId: string, streamUrl: string): Prom
 };
 
 /**
- * Promueve un archivo de la caché temporal a almacenamiento permanente (Cero uso de red)
+ * Promueve la pista de la caché a permanente y persiste los metadatos en MMKV (Cero red)
  */
-export const promoteToPermanent = async (trackId: string): Promise<boolean> => {
+export const promoteToPermanentAndSave = async (track: TrackItem): Promise<boolean> => {
   try {
     await ensureDirectoriesExist();
-    const cachePath = `${CACHE_DIR}/${trackId}.m4a`;
-    const permanentPath = `${PERMANENT_DIR}/${trackId}.m4a`;
+    const cachePath = `${CACHE_DIR}/${track.id}.m4a`;
+    const permanentPath = `${PERMANENT_DIR}/${track.id}.m4a`;
 
     if (await ReactNativeBlobUtil.fs.exists(cachePath)) {
       await ReactNativeBlobUtil.fs.mv(cachePath, permanentPath);
-      console.log(`Pista ${trackId} promovida a almacenamiento permanente.`);
-      return true;
-    } else if (await ReactNativeBlobUtil.fs.exists(permanentPath)) {
-      return true; // Ya estaba guardada permanentemente
+      console.log(`Pista ${track.id} promovida a almacenamiento permanente.`);
     }
+
+    saveTrackToLocalDb(track);
+    return true;
   } catch (error) {
-    console.error(`Error promoviendo pista ${trackId}:`, error);
+    console.error(`Error al promocionar y guardar ${track.id} localmente:`, error);
+    return false;
   }
-  return false;
 };
