@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { StatusBar, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { setupPlayer } from './src/services/player';
-import { RootNavigator } from './src/constants/RootNavigator';
+import { RootNavigator } from './src/navigation/RootNavigator';
 
 const App = () => {
   useEffect(() => {
