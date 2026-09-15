@@ -1,9 +1,16 @@
 // src/services/playTrack.ts
-import TrackPlayer, { Capability, TrackType, AppKilledPlaybackBehavior } from 'react-native-track-player';
+import TrackPlayer, {
+  Capability,
+  TrackType,
+  AppKilledPlaybackBehavior,
+} from 'react-native-track-player';
 import { TrackItem } from '../types/track';
 import {
   getAudioUrlForPlayback,
   triggerBackgroundDownload,
+  saveTrackToLibrary,
+  isTrackDownloaded,
+  getLocalFilePath,
 } from './downloadService';
 
 let isPlayerSetup = false;
@@ -14,16 +21,17 @@ export const setupAudioPlayer = async (): Promise<void> => {
   try {
     await TrackPlayer.setupPlayer({
       autoHandleInterruptions: true,
-      minBuffer: 15,
-      maxBuffer: 50,
-      playBuffer: 2,
-      backBuffer: 10,
+      minBuffer: 30,
+      maxBuffer: 100,
+      playBuffer: 3,
+      backBuffer: 15,
     });
 
     await TrackPlayer.updateOptions({
       android: {
         alwaysPauseOnInterruption: true,
-        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+        appKilledPlaybackBehavior:
+          AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
       },
       capabilities: [
         Capability.Play,
@@ -51,14 +59,12 @@ export const setupAudioPlayer = async (): Promise<void> => {
 
 export const playTrack = async (track: TrackItem): Promise<void> => {
   try {
-    // 1. Obtener URL de reproducción (local o remota)
     const { url, isLocal } = await getAudioUrlForPlayback(track);
 
     if (!url) {
       throw new Error('No se pudo obtener una URL de reproducción válida.');
     }
 
-    // 2. Cargar reproductor
     await setupAudioPlayer();
     await TrackPlayer.reset();
 
@@ -82,17 +88,54 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
     await TrackPlayer.add(trackPayload);
     await TrackPlayer.play();
 
-    console.log(`[playTrack] 🎵 Reproduciendo: ${track.title} (${isLocal ? 'OFFLINE' : 'STREAMING'})`);
+    console.log(
+      `[playTrack] 🎵 Reproduciendo: ${track.title} (${
+        isLocal ? 'OFFLINE' : 'STREAMING'
+      })`
+    );
 
-    // 3. Si no es local, encolar para guardar en segundo plano sin interrumpir lo anterior
-    if (!isLocal) {
+    if (isLocal) {
+      saveTrackToLibrary(track);
+    } else {
       requestAnimationFrame(() => {
         setTimeout(() => {
           triggerBackgroundDownload(track, url);
-        }, 3500);
+        }, 3000);
       });
     }
   } catch (error: any) {
-    console.warn(`[playTrack] ⚠️ No se pudo reproducir "${track.title}":`, error?.message || error);
+    console.warn(
+      `[playTrack] ⚠️ No se pudo reproducir "${track.title}":`,
+      error?.message || error
+    );
+  }
+};
+
+/**
+ * Realiza un Seek inteligente. Si la canción era de streaming pero ya se descargó,
+ * conmuta al archivo local al hacer el salto de tiempo para saltos instantáneos.
+ */
+export const seekToPosition = async (seconds: number, trackId: string): Promise<void> => {
+  try {
+    const downloaded = await isTrackDownloaded(trackId);
+    const activeTrack = await TrackPlayer.getActiveTrack();
+
+    if (downloaded && activeTrack && activeTrack.url?.startsWith('http')) {
+      const localPath = getLocalFilePath(trackId);
+
+      await TrackPlayer.reset();
+      await TrackPlayer.add({
+        ...activeTrack,
+        url: `file://${localPath}`,
+      });
+      await TrackPlayer.seekTo(seconds);
+      await TrackPlayer.play();
+      console.log(`[playTrack] ⚡ Conmutado a LOCAL durante el seek en el segundo: ${seconds}`);
+    } else {
+      await TrackPlayer.seekTo(seconds);
+    }
+  } catch (error) {
+    console.warn('[playTrack] Error al realizar seekToPosition:', error);
+    await TrackPlayer.seekTo(seconds);
   }
 };
