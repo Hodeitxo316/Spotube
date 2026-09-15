@@ -1,5 +1,5 @@
 // src/services/playTrack.ts
-import TrackPlayer, { Capability, TrackType } from 'react-native-track-player';
+import TrackPlayer, { Capability, TrackType, AppKilledPlaybackBehavior } from 'react-native-track-player';
 import { TrackItem } from '../types/track';
 import {
   getAudioUrlForPlayback,
@@ -9,12 +9,24 @@ import {
 
 let isPlayerSetup = false;
 
-export const setupAudioPlayer = async () => {
+export const setupAudioPlayer = async (): Promise<void> => {
   if (isPlayerSetup) return;
+
   try {
-    await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
+    await TrackPlayer.setupPlayer({
+      autoHandleInterruptions: true,
+      minBuffer: 15,
+      maxBuffer: 50,
+      playBuffer: 2,
+      backBuffer: 10,
+    });
+
     await TrackPlayer.updateOptions({
-      android: { alwaysPauseOnInterruption: true },
+      android: {
+        alwaysPauseOnInterruption: true,
+        // Nombre corregido para compatibilidad con tu versión de TrackPlayer:
+        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+      },
       capabilities: [
         Capability.Play,
         Capability.Pause,
@@ -24,6 +36,7 @@ export const setupAudioPlayer = async () => {
       ],
       compactCapabilities: [Capability.Play, Capability.Pause],
     });
+
     isPlayerSetup = true;
   } catch (error: any) {
     if (
@@ -41,12 +54,16 @@ export const setupAudioPlayer = async () => {
 export const playTrack = async (track: TrackItem): Promise<void> => {
   try {
     cancelActiveDownload();
-    await setupAudioPlayer();
-    await TrackPlayer.reset();
 
     const { url, isLocal } = await getAudioUrlForPlayback(track);
 
-    // Si es un archivo local (file://), no requiere cabeceras HTTP
+    if (!url) {
+      throw new Error('No se pudo obtener una URL de reproducción válida.');
+    }
+
+    await setupAudioPlayer();
+    await TrackPlayer.reset();
+
     const trackPayload: any = {
       id: track.id,
       url: url,
@@ -57,7 +74,6 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
       type: TrackType.Default,
     };
 
-    // Inyectar cabeceras HTTP si proviene de streaming remoto para que ExoPlayer no se congele en 00:00
     if (!isLocal) {
       trackPayload.headers = {
         'User-Agent':
@@ -67,12 +83,15 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
 
     await TrackPlayer.add(trackPayload);
     await TrackPlayer.play();
+
     console.log(`[playTrack] 🎵 Reproduciendo: ${track.title} (${isLocal ? 'OFFLINE' : 'STREAMING'})`);
 
     if (!isLocal) {
-      setTimeout(() => {
-        triggerBackgroundDownload(track, url);
-      }, 4000);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          triggerBackgroundDownload(track, url);
+        }, 3500);
+      });
     }
   } catch (error: any) {
     console.warn(`[playTrack] ⚠️ No se pudo reproducir "${track.title}":`, error?.message || error);
