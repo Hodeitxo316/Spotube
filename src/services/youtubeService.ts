@@ -14,10 +14,38 @@ const PIPED_FALLBACKS = [
   'https://pipedapi.adminforge.de',
 ];
 
+// Tiempo límite por petición de red (ms) para no congelar la app
+const FETCH_TIMEOUT_MS = 3500;
+
+// Helper para crear fetch con timeout
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+interface StreamCacheEntry {
+  url: string;
+  timestamp: number;
+}
+
 class YouTubeService {
   private static instance: YouTubeService;
   private innertube: any = null;
   private initPromise: Promise<void> | null = null;
+  
+  // Caché en memoria para enlaces de streaming (1 hora de validez)
+  private streamCache = new Map<string, StreamCacheEntry>();
+  private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hora
 
   private constructor() {}
 
@@ -45,8 +73,7 @@ class YouTubeService {
           });
         } catch (error) {
           this.initPromise = null;
-          console.error('[YouTubeService] Error en init:', error);
-          throw error;
+          console.warn('[YouTubeService] Innertube init falló, se usará fallback directo:', error);
         }
       })();
     }
@@ -54,26 +81,33 @@ class YouTubeService {
     return this.initPromise;
   }
 
+  /**
+   * Búsqueda ultra-rápida con timeout y fallback inmediato
+   */
   public async searchTracks(query: string): Promise<TrackItem[]> {
     const cleanQuery = query ? query.trim() : '';
     if (cleanQuery.length < 2) return [];
 
     try {
-      const response = await fetch('https://www.youtube.com/youtubei/v1/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: 'WEB',
-              clientVersion: '2.20240101.00.00',
-              hl: 'es',
-              gl: 'ES',
+      const response = await fetchWithTimeout(
+        'https://www.youtube.com/youtubei/v1/search',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: 'WEB',
+                clientVersion: '2.20240101.00.00',
+                hl: 'es',
+                gl: 'ES',
+              },
             },
-          },
-          query: cleanQuery,
-        }),
-      });
+            query: cleanQuery,
+          }),
+        },
+        4000 // 4s max para el buscador principal
+      );
 
       if (!response.ok) return this.searchTracksFallback(cleanQuery);
 
@@ -110,6 +144,7 @@ class YouTubeService {
       if (parsed.length > 0) return parsed.slice(0, 20);
       return this.searchTracksFallback(cleanQuery);
     } catch (error) {
+      // Si hay error o timeout, va directamente al fallback sin bloquear la UI
       return this.searchTracksFallback(cleanQuery);
     }
   }
@@ -117,26 +152,41 @@ class YouTubeService {
   private async searchTracksFallback(query: string): Promise<TrackItem[]> {
     for (const baseUrl of PIPED_FALLBACKS) {
       try {
-        const res = await fetch(
-          `${baseUrl}/search?q=${encodeURIComponent(query)}&filter=music_songs`
+        const res = await fetchWithTimeout(
+          `${baseUrl}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
+          {},
+          2500 // 2.5s por servidor Piped para no demorar
         );
+
         if (res.ok) {
           const data = await res.json();
           const items = data.items || [];
-          return items.slice(0, 20).map((item: any) => ({
-            id: item.url?.replace('/watch?v=', '') || item.id,
-            title: item.title || 'Sin título',
-            artist: item.uploaderName || 'Artista desconocido',
-            artwork: item.thumbnail || '',
-            duration: item.duration || 0,
-          }));
+          if (items.length > 0) {
+            return items.slice(0, 20).map((item: any) => ({
+              id: item.url?.replace('/watch?v=', '') || item.id,
+              title: item.title || 'Sin título',
+              artist: item.uploaderName || 'Artista desconocido',
+              artwork: item.thumbnail || '',
+              duration: item.duration || 0,
+            }));
+          }
         }
       } catch {}
     }
     return [];
   }
 
+  /**
+   * Obtiene la URL de streaming priorizando la caché de memoria
+   */
   public async getAudioStreamUrl(videoId: string): Promise<string> {
+    // 1. Revisar caché en memoria
+    const cached = this.streamCache.get(videoId);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.url;
+    }
+
+    // 2. Intentar con Innertube
     try {
       await this.init();
     } catch {}
@@ -164,25 +214,35 @@ class YouTubeService {
           if (audioFormats.length > 0) {
             audioFormats.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0));
             const selected = audioFormats[0];
-            if (selected?.url) return selected.url;
+            if (selected?.url) {
+              this.streamCache.set(videoId, { url: selected.url, timestamp: Date.now() });
+              return selected.url;
+            }
           }
 
           const fallbackFormat = formats.find((f: any) => f.has_audio && f.url);
-          if (fallbackFormat?.url) return fallbackFormat.url;
+          if (fallbackFormat?.url) {
+            this.streamCache.set(videoId, { url: fallbackFormat.url, timestamp: Date.now() });
+            return fallbackFormat.url;
+          }
         }
       } catch {}
     }
 
+    // 3. Fallback a servidores Piped con timeouts ajustados
     for (const baseUrl of PIPED_FALLBACKS) {
       try {
-        const res = await fetch(`${baseUrl}/streams/${videoId}`);
+        const res = await fetchWithTimeout(`${baseUrl}/streams/${videoId}`, {}, 3000);
         if (res.ok) {
           const data = await res.json();
           const streams = data.audioStreams || [];
           const bestAudio =
             streams.find((s: any) => s.mimeType?.includes('audio/mp4')) || streams[0];
 
-          if (bestAudio?.url) return bestAudio.url;
+          if (bestAudio?.url) {
+            this.streamCache.set(videoId, { url: bestAudio.url, timestamp: Date.now() });
+            return bestAudio.url;
+          }
         }
       } catch {}
     }
