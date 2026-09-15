@@ -4,7 +4,6 @@ import { TrackItem } from '../types/track';
 import {
   getAudioUrlForPlayback,
   triggerBackgroundDownload,
-  cancelActiveDownload,
 } from './downloadService';
 
 let isPlayerSetup = false;
@@ -24,7 +23,6 @@ export const setupAudioPlayer = async (): Promise<void> => {
     await TrackPlayer.updateOptions({
       android: {
         alwaysPauseOnInterruption: true,
-        // Nombre corregido para compatibilidad con tu versión de TrackPlayer:
         appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
       },
       capabilities: [
@@ -53,14 +51,14 @@ export const setupAudioPlayer = async (): Promise<void> => {
 
 export const playTrack = async (track: TrackItem): Promise<void> => {
   try {
-    cancelActiveDownload();
-
+    // 1. Obtener URL de reproducción (local o remota)
     const { url, isLocal } = await getAudioUrlForPlayback(track);
 
     if (!url) {
       throw new Error('No se pudo obtener una URL de reproducción válida.');
     }
 
+    // 2. Cargar reproductor
     await setupAudioPlayer();
     await TrackPlayer.reset();
 
@@ -86,6 +84,7 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
 
     console.log(`[playTrack] 🎵 Reproduciendo: ${track.title} (${isLocal ? 'OFFLINE' : 'STREAMING'})`);
 
+    // 3. Si no es local, encolar para guardar en segundo plano sin interrumpir lo anterior
     if (!isLocal) {
       requestAnimationFrame(() => {
         setTimeout(() => {
