@@ -7,9 +7,12 @@ import { TrackItem } from '../types/track';
 const YouTubeJS = YouTubeJSModule as any;
 const InnertubeClass = YouTubeJS.Innertube || YouTubeJS.default?.Innertube || YouTubeJS.default;
 
-export interface StreamResult {
-  url: string;
-}
+const PIPED_FALLBACKS = [
+  'https://api.piped.video',
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.mha.fi',
+  'https://pipedapi.adminforge.de',
+];
 
 class YouTubeService {
   private static instance: YouTubeService;
@@ -35,13 +38,11 @@ class YouTubeService {
             throw new Error('No se pudo cargar la clase Innertube.');
           }
 
-          // retrieve_player: false desactiva eval y acelera la app de inmediato
           this.innertube = await InnertubeClass.create({
-            generate_session_locally: true,
+            generate_session_locally: false,
             retrieve_player: false,
+            enable_safety_mode: false,
           });
-
-          console.log('[YouTubeService] Extractor inicializado sin bloqueo de hilo.');
         } catch (error) {
           this.initPromise = null;
           console.error('[YouTubeService] Error en init:', error);
@@ -57,93 +58,147 @@ class YouTubeService {
     const cleanQuery = query ? query.trim() : '';
     if (cleanQuery.length < 2) return [];
 
-    await this.init();
-    if (!this.innertube) return [];
-
     try {
-      const searchResults = await this.innertube.search(cleanQuery, { type: 'video' });
-      const videos = searchResults.videos || searchResults.results || searchResults.contents || [];
+      const response = await fetch('https://www.youtube.com/youtubei/v1/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20240101.00.00',
+              hl: 'es',
+              gl: 'ES',
+            },
+          },
+          query: cleanQuery,
+        }),
+      });
+
+      if (!response.ok) return this.searchTracksFallback(cleanQuery);
+
+      const data = await response.json();
+      const contents =
+        data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
+          ?.contents?.[0]?.itemSectionRenderer?.contents || [];
 
       const parsed: TrackItem[] = [];
-      for (const item of videos as any[]) {
-        const id = item.id || item.video_id;
-        const title = item.title?.text || item.title?.toString() || item.title || item.name;
-        if (id && title) {
+      const seenIds = new Set<string>();
+
+      for (const item of contents) {
+        const video = item.videoRenderer;
+        if (video && video.videoId && !seenIds.has(video.videoId)) {
+          seenIds.add(video.videoId);
+
+          const title = video.title?.runs?.[0]?.text || 'Sin título';
+          const artist = video.ownerText?.runs?.[0]?.text || 'Artista desconocido';
+          const durationText = video.lengthText?.simpleText || '0:00';
+          const artwork =
+            video.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+            `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+
           parsed.push({
-            id,
-            title: typeof title === 'string' ? title : title.toString(),
-            artist: item.author?.name || item.artists?.[0]?.name || 'Artista desconocido',
-            artwork: item.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-            duration: item.duration?.seconds || 0,
+            id: video.videoId,
+            title,
+            artist,
+            artwork,
+            duration: this.parseDuration(durationText),
           });
         }
       }
-      return parsed.slice(0, 20);
-    } catch (err) {
-      console.error('[YouTubeService] Error en búsqueda:', err);
-      return [];
+
+      if (parsed.length > 0) return parsed.slice(0, 20);
+      return this.searchTracksFallback(cleanQuery);
+    } catch (error) {
+      return this.searchTracksFallback(cleanQuery);
     }
   }
 
-  public async getAudioStream(videoId: string): Promise<StreamResult> {
-    await this.init();
-
-    // 1. Extraer flujos directos no cifrados mediante clientes incrustados/móviles
-    const clients = ['TV_EMBEDDED', 'ANDROID', 'IOS'] as const;
-
-    for (const clientName of clients) {
+  private async searchTracksFallback(query: string): Promise<TrackItem[]> {
+    for (const baseUrl of PIPED_FALLBACKS) {
       try {
-        const info = await this.innertube.getBasicInfo(videoId, { client: clientName });
-        const formats = [
-          ...(info.streaming_data?.adaptive_formats || []),
-          ...(info.streaming_data?.formats || []),
-        ];
-
-        const audioFormat = formats.find(
-          (f: any) => (f.has_audio || f.mime_type?.includes('audio')) && f.url
+        const res = await fetch(
+          `${baseUrl}/search?q=${encodeURIComponent(query)}&filter=music_songs`
         );
-
-        if (audioFormat?.url) {
-          return { url: audioFormat.url };
-        }
-      } catch (e) {
-        // Continuar al siguiente cliente
-      }
-    }
-
-    // 2. Respaldo distribuido en caso de restricción geográfica o de licencias
-    const endpoints = [
-      `https://pipedapi.kavin.rocks/streams/${videoId}`,
-      `https://api.piped.video/streams/${videoId}`,
-      `https://inv.nadeko.net/api/v1/videos/${videoId}`,
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const res = await fetch(endpoint);
         if (res.ok) {
           const data = await res.json();
-          const audioStreams = data.audioStreams || data.adaptiveFormats || [];
-          const bestAudio = audioStreams.find(
-            (s: any) =>
-              s.mimeType?.includes('audio/mp4') ||
-              s.type?.includes('audio/mp4') ||
-              s.format === 'M4A'
-          ) || audioStreams[0];
-
-          if (bestAudio?.url) {
-            return { url: bestAudio.url };
-          }
+          const items = data.items || [];
+          return items.slice(0, 20).map((item: any) => ({
+            id: item.url?.replace('/watch?v=', '') || item.id,
+            title: item.title || 'Sin título',
+            artist: item.uploaderName || 'Artista desconocido',
+            artwork: item.thumbnail || '',
+            duration: item.duration || 0,
+          }));
         }
-      } catch (e) {
-        // Continuar al siguiente endpoint
-      }
+      } catch {}
+    }
+    return [];
+  }
+
+  public async getAudioStreamUrl(videoId: string): Promise<string> {
+    try {
+      await this.init();
+    } catch {}
+
+    const clientsToTry: Array<'ANDROID' | 'YTMUSIC' | 'WEB' | 'IOS'> = [
+      'ANDROID',
+      'YTMUSIC',
+      'WEB',
+      'IOS',
+    ];
+
+    for (const client of clientsToTry) {
+      try {
+        if (this.innertube) {
+          const info = await this.innertube.getBasicInfo(videoId, { client });
+          const formats = [
+            ...(info.streaming_data?.adaptive_formats || []),
+            ...(info.streaming_data?.formats || []),
+          ];
+
+          const audioFormats = formats.filter(
+            (f: any) => f.mime_type?.includes('audio/mp4') || f.mime_type?.includes('m4a')
+          );
+
+          if (audioFormats.length > 0) {
+            audioFormats.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0));
+            const selected = audioFormats[0];
+            if (selected?.url) return selected.url;
+          }
+
+          const fallbackFormat = formats.find((f: any) => f.has_audio && f.url);
+          if (fallbackFormat?.url) return fallbackFormat.url;
+        }
+      } catch {}
     }
 
-    throw new Error(`No se pudo obtener datos de transmisión para el ID: ${videoId}`);
+    for (const baseUrl of PIPED_FALLBACKS) {
+      try {
+        const res = await fetch(`${baseUrl}/streams/${videoId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const streams = data.audioStreams || [];
+          const bestAudio =
+            streams.find((s: any) => s.mimeType?.includes('audio/mp4')) || streams[0];
+
+          if (bestAudio?.url) return bestAudio.url;
+        }
+      } catch {}
+    }
+
+    throw new Error(`La canción (${videoId}) no está disponible.`);
+  }
+
+  private parseDuration(text: string): number {
+    if (!text) return 0;
+    const parts = text.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return 0;
   }
 }
 
 export const youtubeService = YouTubeService.getInstance();
 export const searchTracks = (query: string) => youtubeService.searchTracks(query);
-export const getAudioStream = (videoId: string) => youtubeService.getAudioStream(videoId);
+export const getAudioStreamUrl = (videoId: string) => youtubeService.getAudioStreamUrl(videoId);
