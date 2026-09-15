@@ -1,34 +1,62 @@
 // src/services/playTrack.ts
-import TrackPlayer from 'react-native-track-player';
+import TrackPlayer, { Capability, TrackType } from 'react-native-track-player';
 import { TrackItem } from '../types/track';
-import { getAudioStreamUrl } from './youtubeService';
-import { getLocalAudioPath, cacheAudioStream } from './cacheManager';
+import { getAudioUrlForPlayback } from './downloadService';
+
+let isPlayerSetup = false;
+
+export const setupAudioPlayer = async () => {
+  if (isPlayerSetup) return;
+  try {
+    await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
+    await TrackPlayer.updateOptions({
+      android: { alwaysPauseOnInterruption: true },
+      capabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SkipToNext,
+        Capability.SkipToPrevious,
+        Capability.SeekTo,
+      ],
+      compactCapabilities: [Capability.Play, Capability.Pause],
+    });
+    isPlayerSetup = true;
+  } catch (error: any) {
+    if (
+      error?.message?.includes('already initialized') ||
+      error?.code === 'player_already_initialized'
+    ) {
+      isPlayerSetup = true;
+    } else {
+      console.error('[setupAudioPlayer Error]:', error);
+      throw error;
+    }
+  }
+};
 
 export const playTrack = async (track: TrackItem): Promise<void> => {
   try {
-    // 1. Verificación en disco local (Latencia < 100ms)
-    let playbackUrl = await getLocalAudioPath(track.id);
+    await setupAudioPlayer();
 
-    // 2. Si no existe en local, se obtiene la URL remota y se inicia el Write-Through
-    if (!playbackUrl) {
-      playbackUrl = await getAudioStreamUrl(track.id);
-      // Inicia la descarga en caché temporal de forma asíncrona en segundo plano
-      cacheAudioStream(track.id, playbackUrl);
-    }
+    // Obtención de URL fluida (local o remota)
+    const audioUrl = await getAudioUrlForPlayback(track);
 
-    // 3. Inyección y reproducción en TrackPlayer
     await TrackPlayer.reset();
+
     await TrackPlayer.add({
       id: track.id,
-      url: playbackUrl,
+      url: audioUrl,
       title: track.title,
       artist: track.artist,
       artwork: track.artwork,
       duration: track.duration,
+      type: TrackType.Default,
     });
 
     await TrackPlayer.play();
-  } catch (error) {
-    console.error('Error al reproducir pista con estrategia de caché:', error);
+    console.log('[playTrack] Reproducción en marcha.');
+  } catch (error: any) {
+    console.error('[playTrack Error]:', error?.message || error);
+    throw error;
   }
 };

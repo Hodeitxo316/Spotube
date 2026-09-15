@@ -6,8 +6,8 @@ import { TrackItem } from '../types/track';
 const { dirs } = ReactNativeBlobUtil.fs;
 const CACHE_DIR = `${dirs.CacheDir}/audio_cache`;
 const PERMANENT_DIR = `${dirs.DocumentDir}/saved_tracks`;
+const MIN_FILE_SIZE_BYTES = 500 * 1024; // 500 KB mínimos
 
-// Estructura del directorio de la aplicación
 const ensureDirectoriesExist = async () => {
   if (!(await ReactNativeBlobUtil.fs.isDir(CACHE_DIR))) {
     await ReactNativeBlobUtil.fs.mkdir(CACHE_DIR);
@@ -18,26 +18,34 @@ const ensureDirectoriesExist = async () => {
 };
 
 /**
- * Retorna la ruta nativa local del archivo si existe (Permanente o Caché temporal)
+ * Retorna la ruta nativa local del archivo solo si existe y no está corrupto (> 500 KB)
  */
 export const getLocalAudioPath = async (trackId: string): Promise<string | null> => {
   await ensureDirectoriesExist();
 
-  const permanentPath = `${PERMANENT_DIR}/${trackId}.m4a`;
-  if (await ReactNativeBlobUtil.fs.exists(permanentPath)) {
-    return `file://${permanentPath}`;
-  }
+  const verifyAndGetPath = async (path: string): Promise<string | null> => {
+    if (await ReactNativeBlobUtil.fs.exists(path)) {
+      const stat = await ReactNativeBlobUtil.fs.stat(path);
+      if (stat.size >= MIN_FILE_SIZE_BYTES) {
+        return `file://${path}`;
+      }
+      console.warn(`Archivo corrupto hallado en ${path} (${stat.size} bytes). Eliminando...`);
+      await ReactNativeBlobUtil.fs.unlink(path);
+    }
+    return null;
+  };
 
-  const cachePath = `${CACHE_DIR}/${trackId}.m4a`;
-  if (await ReactNativeBlobUtil.fs.exists(cachePath)) {
-    return `file://${cachePath}`;
-  }
+  const permanentPath = await verifyAndGetPath(`${PERMANENT_DIR}/${trackId}.m4a`);
+  if (permanentPath) return permanentPath;
+
+  const cachePath = await verifyAndGetPath(`${CACHE_DIR}/${trackId}.m4a`);
+  if (cachePath) return cachePath;
 
   return null;
 };
 
 /**
- * Descarga y guarda en caché temporal en segundo plano mientras se transmite el audio
+ * Descarga y guarda en caché temporal en segundo plano
  */
 export const cacheAudioStream = async (trackId: string, streamUrl: string): Promise<string> => {
   await ensureDirectoriesExist();
@@ -59,7 +67,7 @@ export const cacheAudioStream = async (trackId: string, streamUrl: string): Prom
 };
 
 /**
- * Promueve la pista de la caché a permanente y persiste los metadatos en MMKV (Cero red)
+ * Promueve la pista de la caché a permanente y persiste los metadatos en la base de datos local
  */
 export const promoteToPermanentAndSave = async (track: TrackItem): Promise<boolean> => {
   try {

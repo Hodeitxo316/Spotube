@@ -1,4 +1,9 @@
 // index.js
+
+// index.js (al inicio del archivo)
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
+
 import './src/utils/polyfills';
 
 import { AppRegistry } from 'react-native';
