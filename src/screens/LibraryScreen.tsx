@@ -1,16 +1,22 @@
-import React, { useCallback, useState } from 'react';
+import React, {
+  useCallback,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
   FlatList,
   Image,
   TouchableOpacity,
+  Animated,
   StyleSheet,
   Alert,
   ActivityIndicator,
   ScrollView,
   Modal,
   TextInput,
+  PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -75,6 +81,29 @@ export const LibraryScreen = () => {
   const [sortOrder, setSortOrder] = useState<
     'recent' | 'oldest' | 'titleAsc' | 'titleDesc' | 'artistAsc'
   >('recent');
+
+  const [draggedTrackId, setDraggedTrackId] =
+    useState<string | null>(null);
+
+  const [dragOverIndex, setDragOverIndex] =
+    useState<number | null>(null);
+
+  const [trackLayouts, setTrackLayouts] = useState<
+    Record<string, { y: number; height: number }>
+  >({});
+
+  const [draggedTrackIndex, setDraggedTrackIndex] =
+    useState<number | null>(null);
+
+  const [dragDy, setDragDy] = useState(0);
+
+  const dragAnimatedY = useRef(
+    new Animated.Value(0),
+  ).current;
+
+  const draggedTrackIdRef = useRef<string | null>(null);
+  const draggedTrackIndexRef = useRef<number | null>(null);
+  const dragOverIndexRef = useRef<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -375,126 +404,423 @@ export const LibraryScreen = () => {
     }
 
     if (section === 'playlist') {
+      console.log(
+        '[Drag] getSectionTracks:',
+        sectionTracks.map((track) => track.id),
+      );
+
       return sectionTracks;
     }
 
     return sortTracks(sectionTracks);
   };
 
-    /**
-   * Tarjeta individual de canción.
-   */
-  const renderTrackItem = ({ item }: { item: Track }) => (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      style={styles.trackCard}
-      onPress={() => handlePlayTrack(item)}
-    >
-      <Image
-        source={{ uri: item.coverUrl }}
-        style={styles.coverImage}
-      />
+  const reorderTracks = (
+    list: Track[],
+    fromIndex: number,
+    toIndex: number,
+  ): Track[] => {
+    const result = [...list];
 
-      <View style={styles.trackInfo}>
-        <Text style={styles.title} numberOfLines={1}>
-          {item.title}
-        </Text>
+    const [movedTrack] = result.splice(fromIndex, 1);
 
-        <Text style={styles.artist} numberOfLines={1}>
-          {item.artist}
-        </Text>
+    result.splice(toIndex, 0, movedTrack);
 
-        {item.downloadState === 'downloading' && (
-          <View
-            style={[
-              styles.downloadBadge,
-              styles.downloadingBadge,
-            ]}
-          >
-            <Text
-              style={[
-                styles.downloadBadgeText,
-                styles.downloadingBadgeText,
-              ]}
-            >
-              DESCARGANDO...
-            </Text>
-          </View>
-        )}
+    return result;
+  };
 
-        {item.downloadState === 'completed' && !item.isLocalFile && (
-          <View style={styles.downloadBadge}>
-            <Text style={styles.downloadBadgeText}>
-              OFFLINE
-            </Text>
-          </View>
-        )}
+  /**
+ * Tarjeta individual de canción.
+ */
 
-        {item.isLocalFile && (
-          <View style={styles.localBadge}>
-            <Text style={styles.localBadgeText}>
-              LOCAL
-            </Text>
-          </View>
-        )}
-      </View>
+  const createTrackPanResponder = (trackId: string) =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
 
-      <View style={styles.actions}>
+      onStartShouldSetPanResponderCapture: () => false,
+
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        if (section !== 'playlist') {
+          return false;
+        }
+
+        if (draggedTrackIdRef.current !== trackId) {
+          return false;
+        }
+
+        return Math.abs(gestureState.dy) > 2;
+      },
+
+      onPanResponderGrant: () => {
+        if (section !== 'playlist') {
+          return;
+        }
+
+        setDragDy(0);
+      },
+
+      onPanResponderMove: (_, gestureState) => {
+        if (
+          section !== 'playlist' ||
+          draggedTrackIdRef.current !== trackId
+        ) {
+          return;
+        }
+
+        const dy = gestureState.dy;
+
+        // La tarjeta sigue directamente al dedo
+        dragAnimatedY.setValue(dy);
+
+        const currentTracks = getSectionTracks();
+
+        const originalIndex =
+          draggedTrackIndexRef.current ?? 0;
+
+        /*
+         * Altura aproximada de cada canción.
+         * Las medidas reales que hemos visto son ~78 px.
+         */
+        const ITEM_HEIGHT = 78;
+
+        /*
+         * Calculamos dónde está el centro de la canción
+         * que estamos arrastrando.
+         */
+        let targetIndex = originalIndex;
+
+        if (dy > 0) {
+          // Bajando: cada ~media tarjeta avanzamos una posición.
+          const movedSlots = Math.floor(
+            (dy + ITEM_HEIGHT / 2) / ITEM_HEIGHT,
+          );
+
+          targetIndex =
+            originalIndex + movedSlots;
+        } else if (dy < 0) {
+          // Subiendo: cada ~media tarjeta retrocedemos una posición.
+          const movedSlots = Math.ceil(
+            (dy - ITEM_HEIGHT / 2) / ITEM_HEIGHT,
+          );
+
+          targetIndex =
+            originalIndex + movedSlots;
+        }
+        /*
+         * Limitamos el índice para que nunca salga
+         * de los límites de la playlist.
+         */
+        targetIndex = Math.max(
+          0,
+          Math.min(
+            targetIndex,
+            currentTracks.length - 1,
+          ),
+        );
+
+        if (
+          dragOverIndexRef.current !== targetIndex
+        ) {
+          dragOverIndexRef.current = targetIndex;
+        }
+      },
+
+      onPanResponderRelease: () => {
+        if (
+          section !== 'playlist' ||
+          !selectedPlaylist ||
+          draggedTrackIndexRef.current === null ||
+          dragOverIndexRef.current === null
+        ) {
+          draggedTrackIdRef.current = null;
+          draggedTrackIndexRef.current = null;
+          dragOverIndexRef.current = null;
+
+          dragAnimatedY.setValue(0);
+
+          setDraggedTrackId(null);
+          setDraggedTrackIndex(null);
+          setDragOverIndex(null);
+
+          return;
+        }
+
+        const fromIndex = draggedTrackIndexRef.current;
+        const toIndex = dragOverIndexRef.current;
+
+        console.log(
+          '[Drag] Soltando:',
+          'from =',
+          fromIndex,
+          'to =',
+          toIndex,
+        );
+
+        if (fromIndex !== toIndex) {
+          const currentTracks = getSectionTracks();
+
+          const reorderedTracks = reorderTracks(
+            currentTracks,
+            fromIndex,
+            toIndex,
+          );
+
+          console.log(
+            '[Drag] Nuevo orden:',
+            reorderedTracks.map((track) => track.id),
+          );
+
+          const updatedPlaylist: Playlist = {
+            ...selectedPlaylist,
+            trackIds: reorderedTracks.map(
+              (track) => track.id,
+            ),
+          };
+
+          libraryStorage.savePlaylist(updatedPlaylist);
+          setSelectedPlaylist(updatedPlaylist);
+
+          console.log(
+            '[Drag] tracks:',
+            tracks.map((track) => track.id),
+          );
+
+          console.log(
+            '[Drag] Playlist actualizada:',
+            updatedPlaylist.trackIds,
+          );
+        }
+
+        draggedTrackIdRef.current = null;
+        draggedTrackIndexRef.current = null;
+        dragOverIndexRef.current = null;
+
+        dragAnimatedY.setValue(0);
+
+        setDraggedTrackId(null);
+        setDraggedTrackIndex(null);
+        setDragOverIndex(null);
+      },
+
+      onPanResponderTerminate: () => {
+        setDraggedTrackId(null);
+        setDragOverIndex(null);
+      },
+    });
+
+  const getTrackDragOffset = (trackId: string): number => {
+    if (
+      section !== 'playlist' ||
+      draggedTrackId !== trackId
+    ) {
+      return 0;
+    }
+
+    if (
+      dragOverIndex === null ||
+      draggedTrackIndex === null
+    ) {
+      return 0;
+    }
+
+    const targetLayout =
+      trackLayouts[
+      getSectionTracks()[dragOverIndex]?.id
+      ];
+
+    const draggedLayout = trackLayouts[trackId];
+
+    if (!targetLayout || !draggedLayout) {
+      return 0;
+    }
+
+    return (
+      targetLayout.y -
+      draggedLayout.y
+    );
+  };
+
+
+  const renderTrackItem = ({ item }: { item: Track }) => {
+    const panResponder = createTrackPanResponder(item.id);
+
+    return (
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.trackCard,
+          draggedTrackId === item.id && {
+            transform: [
+              {
+                translateY: dragAnimatedY,
+              },
+            ],
+          },
+        ]}
+        onLayout={(event) => {
+          const { y, height } = event.nativeEvent.layout;
+
+          console.log(
+            '[Layout]',
+            item.id,
+            'y =',
+            y,
+            'height =',
+            height,
+          );
+
+          setTrackLayouts((current) => ({
+            ...current,
+            [item.id]: { y, height },
+          }));
+        }}
+      >
         <TouchableOpacity
-          onPress={() => toggleFavorite(item)}
-          style={styles.actionButton}
-          hitSlop={{
-            top: 10,
-            bottom: 10,
-            left: 10,
-            right: 10,
-          }}
-        >
-          <FontAwesome
-            name={item.isFavorite ? 'heart' : 'heart-o'}
-            size={20}
-            color={item.isFavorite ? '#FF5500' : '#B3B3B3'}
-          />
-        </TouchableOpacity>
+          activeOpacity={0.8}
+          delayLongPress={300}
+          onLongPress={() => {
+            if (section !== 'playlist') {
+              return;
+            }
 
-        {section === 'playlist' ? (
-          <TouchableOpacity
-            onPress={() => handleRemoveSongFromPlaylist(item.id)}
-            style={styles.actionButton}
-            hitSlop={{
-              top: 10,
-              bottom: 10,
-              left: 10,
-              right: 10,
-            }}
-          >
-            <FontAwesome
-              name="ellipsis-h"
-              size={20}
-              color="#B3B3B3"
-            />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPress={() => handleConfirmDelete(item)}
-            style={styles.actionButton}
-            hitSlop={{
-              top: 10,
-              bottom: 10,
-              left: 10,
-              right: 10,
-            }}
-          >
-            <FontAwesome
-              name="trash-o"
-              size={19}
-              color="#B3B3B3"
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+            const currentTracks = getSectionTracks();
+
+            const index = currentTracks.findIndex(
+              (track) => track.id === item.id,
+            );
+
+            if (index === -1) {
+              return;
+            }
+
+            draggedTrackIdRef.current = item.id;
+            draggedTrackIndexRef.current = index;
+            dragOverIndexRef.current = index;
+
+            setDraggedTrackId(item.id);
+            setDraggedTrackIndex(index);
+            setDragOverIndex(index);
+            setDragDy(0);
+            dragAnimatedY.setValue(0);
+
+            console.log('[Drag] Iniciando:', item.id);
+          }}
+          onPress={() => handlePlayTrack(item)}
+          style={styles.trackContent}
+        >
+          <Image
+            source={{ uri: item.coverUrl }}
+            style={styles.coverImage}
+          />
+
+          <View style={styles.trackInfo}>
+            <Text style={styles.title} numberOfLines={1}>
+              {item.title}
+            </Text>
+
+            <Text style={styles.artist} numberOfLines={1}>
+              {item.artist}
+            </Text>
+
+            {item.downloadState === 'downloading' && (
+              <View
+                style={[
+                  styles.downloadBadge,
+                  styles.downloadingBadge,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.downloadBadgeText,
+                    styles.downloadingBadgeText,
+                  ]}
+                >
+                  DESCARGANDO...
+                </Text>
+              </View>
+            )}
+
+            {item.downloadState === 'completed' &&
+              !item.isLocalFile && (
+                <View style={styles.downloadBadge}>
+                  <Text style={styles.downloadBadgeText}>
+                    OFFLINE
+                  </Text>
+                </View>
+              )}
+
+            {item.isLocalFile && (
+              <View style={styles.localBadge}>
+                <Text style={styles.localBadgeText}>
+                  LOCAL
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              onPress={() => toggleFavorite(item)}
+              style={styles.actionButton}
+              hitSlop={{
+                top: 10,
+                bottom: 10,
+                left: 10,
+                right: 10,
+              }}
+            >
+              <FontAwesome
+                name={item.isFavorite ? 'heart' : 'heart-o'}
+                size={20}
+                color={
+                  item.isFavorite ? '#FF5500' : '#B3B3B3'
+                }
+              />
+            </TouchableOpacity>
+
+            {section === 'playlist' ? (
+              <TouchableOpacity
+                onPress={() =>
+                  handleRemoveSongFromPlaylist(item.id)
+                }
+                style={styles.actionButton}
+                hitSlop={{
+                  top: 10,
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
+                }}
+              >
+                <FontAwesome
+                  name="ellipsis-h"
+                  size={20}
+                  color="#B3B3B3"
+                />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => handleConfirmDelete(item)}
+                style={styles.actionButton}
+                hitSlop={{
+                  top: 10,
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
+                }}
+              >
+                <FontAwesome
+                  name="trash-o"
+                  size={19}
+                  color="#B3B3B3"
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
 
   /**
    * Pantalla principal de Biblioteca.
@@ -692,9 +1018,14 @@ export const LibraryScreen = () => {
   const renderSection = () => {
     const sectionTracks =
       section === 'playlist' && selectedPlaylist
-        ? tracks.filter((track) =>
-          selectedPlaylist.trackIds.includes(track.id)
-        )
+        ? selectedPlaylist.trackIds
+          .map((trackId) =>
+            tracks.find((track) => track.id === trackId)
+          )
+          .filter(
+            (track): track is Track =>
+              track !== undefined
+          )
         : getSectionTracks();
 
     let title = '';
@@ -763,6 +1094,7 @@ export const LibraryScreen = () => {
             data={sectionTracks}
             keyExtractor={(item) => item.id}
             renderItem={renderTrackItem}
+            scrollEnabled={!draggedTrackId}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
@@ -1412,6 +1744,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#282828',
   },
 
+  trackContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
   coverImage: {
     width: 56,
     height: 56,
@@ -1867,7 +2205,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  
+
 
 
 });
