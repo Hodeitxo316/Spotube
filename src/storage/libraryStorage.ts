@@ -1,9 +1,10 @@
 // src/storage/libraryStorage.ts
 import { createMMKV, MMKV } from 'react-native-mmkv';
-import { Track } from '../types/library';
+import { Track, Playlist } from '../types/library';
 
 const storage: MMKV = createMMKV();
 const TRACKS_KEY = 'library_tracks';
+const PLAYLISTS_KEY = 'library_playlists';
 
 class LibraryStorageService {
   /**
@@ -16,6 +17,53 @@ class LibraryStorageService {
     } catch (error) {
       console.error('[libraryStorage] Error al obtener canciones:', error);
       return [];
+    }
+  }
+
+  /**
+ * Obtiene todas las playlists almacenadas.
+ */
+  public getAllPlaylists(): Playlist[] {
+    try {
+      const json = storage.getString(PLAYLISTS_KEY);
+      return json ? JSON.parse(json) : [];
+    } catch (error) {
+      console.error('[libraryStorage] Error al obtener playlists:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Guarda una playlist nueva o reemplaza una existente.
+   */
+  public savePlaylist(playlist: Playlist): void {
+    try {
+      const playlists = this.getAllPlaylists();
+      const index = playlists.findIndex((p) => p.id === playlist.id);
+
+      if (index !== -1) {
+        playlists[index] = playlist;
+      } else {
+        playlists.push(playlist);
+      }
+
+      storage.set(PLAYLISTS_KEY, JSON.stringify(playlists));
+    } catch (error) {
+      console.error('[libraryStorage] Error al guardar playlist:', error);
+    }
+  }
+
+  /**
+   * Elimina una playlist por su ID.
+   */
+  public deletePlaylist(id: string): void {
+    try {
+      const playlists = this.getAllPlaylists();
+      const filtered = playlists.filter((p) => p.id !== id);
+
+      storage.set(PLAYLISTS_KEY, JSON.stringify(filtered));
+    } catch (error) {
+      console.error('[libraryStorage] Error al eliminar playlist:', error);
     }
   }
 

@@ -1,20 +1,25 @@
 import { useState, useCallback, useEffect } from 'react';
 import { DeviceEventEmitter } from 'react-native';
-import { Track, LibraryFilter } from '../types/library';
+import { Track, Playlist, LibraryFilter } from '../types/library';
 import { libraryStorage } from '../storage/libraryStorage';
 import RNBlobUtil from 'react-native-blob-util';
 import { getLocalFilePath, getTempFilePath } from '../services/downloadService';
 
 export const useLibrary = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshLibrary = useCallback(() => {
     try {
       const allTracks = libraryStorage.getAllTracks();
+      const allPlaylists = libraryStorage.getAllPlaylists();
+
+      setPlaylists(allPlaylists);
 
       let filtered = allTracks;
+
       if (filter === 'favorites') {
         filtered = allTracks.filter((t) => t.isFavorite);
       } else if (filter === 'downloaded') {
@@ -74,13 +79,50 @@ export const useLibrary = () => {
     }
   };
 
+  const createPlaylist = (name: string) => {
+    const newPlaylist: Playlist = {
+      id: `playlist_${Date.now()}`,
+      name: name.trim(),
+      trackIds: [],
+      createdAt: Date.now(),
+    };
+
+    libraryStorage.savePlaylist(newPlaylist);
+    refreshLibrary();
+  };
+
+  const renamePlaylist = (playlistId: string, newName: string) => {
+    const playlist = playlists.find((p) => p.id === playlistId);
+
+    if (!playlist) return;
+
+    const updatedPlaylist: Playlist = {
+      ...playlist,
+      name: newName.trim(),
+    };
+
+    libraryStorage.savePlaylist(updatedPlaylist);
+    refreshLibrary();
+  };
+
+  const deletePlaylist = (playlistId: string) => {
+    libraryStorage.deletePlaylist(playlistId);
+    refreshLibrary();
+  };
+
   return {
     tracks,
+    playlists,
     filter,
     setFilter,
     isLoading,
     refreshLibrary,
     toggleFavorite,
     deleteTrackCompletely,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
   };
+
+
 };

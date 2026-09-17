@@ -1,4 +1,8 @@
-export type DownloadState = 'idle' | 'downloading' | 'completed' | 'error';
+export type DownloadState =
+  | 'idle'
+  | 'downloading'
+  | 'completed'
+  | 'error';
 
 export interface Track {
   id: string;
@@ -11,6 +15,20 @@ export interface Track {
   downloadState: DownloadState;
   fileSizeBytes?: number;
   addedAt: number;
+  isLocalFile?: boolean;
 }
 
-export type LibraryFilter = 'all' | 'favorites' | 'downloaded';
+export interface Playlist {
+  id: string;
+  name: string;
+  coverUrl?: string;
+  trackIds: string[];
+  createdAt: number;
+}
+
+export type LibraryFilter =
+  | 'all'
+  | 'favorites'
+  | 'downloaded'
+  | 'local'
+  | 'playlists';
