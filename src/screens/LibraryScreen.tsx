@@ -20,6 +20,12 @@ import { Track, Playlist } from '../types/library';
 import { TrackItem } from '../types/track';
 import { playTrack } from '../services/playTrack';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import {
+  pick,
+  keepLocalCopy,
+} from '@react-native-documents/picker';
+
+
 
 type LibrarySection =
   | 'home'
@@ -39,14 +45,43 @@ export const LibraryScreen = () => {
     createPlaylist,
   } = useLibrary();
 
-  const [section, setSection] = useState<LibrarySection>('home');
-  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
-  const [playlistName, setPlaylistName] = useState('');
-  const [showAddSongs, setShowAddSongs] = useState(false);
-  const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
-  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(
-    null
+  const [menuPlaylist, setMenuPlaylist] =
+    useState<Playlist | null>(null);
+
+  const [section, setSection] =
+    useState<LibrarySection>('home');
+
+  const [showCreatePlaylist, setShowCreatePlaylist] =
+    useState(false);
+
+  const [editingPlaylist, setEditingPlaylist] =
+    useState<Playlist | null>(null);
+
+  const [playlistName, setPlaylistName] =
+    useState('');
+
+  const [showAddSongs, setShowAddSongs] =
+    useState(false);
+
+  const [selectedTrackIds, setSelectedTrackIds] =
+    useState<string[]>([]);
+
+  const [selectedPlaylist, setSelectedPlaylist] =
+    useState<Playlist | null>(null);
+
+  const [showSortMenu, setShowSortMenu] =
+    useState(false);
+
+  const [sortOrder, setSortOrder] = useState<
+    'recent' | 'oldest' | 'titleAsc' | 'titleDesc' | 'artistAsc'
+  >('recent');
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshLibrary();
+    }, [refreshLibrary])
   );
+
 
   useFocusEffect(
     useCallback(() => {
@@ -59,12 +94,16 @@ export const LibraryScreen = () => {
    */
   const handlePlayTrack = async (track: Track) => {
     try {
+
+      console.log('🎵 TRACK LOCAL:', JSON.stringify(track, null, 2));
+
       const trackToPlay: TrackItem = {
         id: track.id,
         title: track.title,
         artist: track.artist,
-        artwork: track.coverUrl,
+        artwork: track.coverUrl || 'local',
         duration: track.duration || 0,
+        streamUrl: track.localPath,
       };
 
       await playTrack(trackToPlay);
@@ -103,6 +142,43 @@ export const LibraryScreen = () => {
   const handleCreatePlaylist = () => {
     setPlaylistName('');
     setShowCreatePlaylist(true);
+  };
+
+  const handleRenamePlaylist = () => {
+    if (!editingPlaylist) {
+      return;
+    }
+
+    const newName = playlistName.trim();
+
+    if (!newName) {
+      return;
+    }
+
+    const updatedPlaylist: Playlist = {
+      ...editingPlaylist,
+      name: newName,
+    };
+
+    libraryStorage.savePlaylist(updatedPlaylist);
+
+    setEditingPlaylist(null);
+    setPlaylistName('');
+    setMenuPlaylist(null);
+
+    setShowCreatePlaylist(false);
+    refreshLibrary();
+  };
+
+  const handleDeletePlaylist = () => {
+    if (!menuPlaylist) {
+      return;
+    }
+
+    libraryStorage.deletePlaylist(menuPlaylist.id);
+
+    setMenuPlaylist(null);
+    refreshLibrary();
   };
 
   const toggleTrackSelection = (trackId: string) => {
@@ -177,41 +253,135 @@ export const LibraryScreen = () => {
    * Abrir archivos locales.
    * La importación real la añadiremos en el siguiente paso.
    */
-  const handleLocalFiles = () => {
-    Alert.alert(
-      'Archivos locales',
-      'La importación de MP3, M4A y WAV la añadiremos ahora como siguiente paso.'
-    );
+  const handleLocalFiles = async () => {
+    try {
+      const result = await pick({
+        type: ['audio/*'],
+        allowMultiSelection: true,
+      });
+
+      for (const file of result) {
+        const fileName = file.name ?? 'Archivo sin nombre';
+
+        const [copyResult] = await keepLocalCopy({
+          files: [
+            {
+              uri: file.uri,
+              fileName,
+            },
+          ],
+          destination: 'documentDirectory',
+        });
+
+        if (copyResult.status !== 'success') {
+          console.error(
+            '[LibraryScreen] Error copiando archivo:',
+            copyResult.copyError
+          );
+          continue;
+        }
+
+        const newTrack: Track = {
+          id: `local_${Date.now()}_${Math.random()}`,
+          title: fileName.replace(/\.[^/.]+$/, ''),
+          artist: 'Archivo local',
+          coverUrl: '',
+          localPath: copyResult.localUri,
+          isFavorite: false,
+          downloadState: 'completed',
+          addedAt: Date.now(),
+          isLocalFile: true,
+        };
+
+        libraryStorage.saveTrack(newTrack);
+      }
+
+      refreshLibrary();
+
+      Alert.alert(
+        'Archivo añadido',
+        result
+          .map((file) => file.name ?? 'Sin nombre')
+          .join('\n')
+      );
+    } catch (error: any) {
+      if (error?.code === 'OPERATION_CANCELED') {
+        return;
+      }
+
+      console.error('ERROR AL SELECCIONAR:', error);
+    }
   };
 
   /**
    * Canciones que pertenecen a la sección seleccionada.
    */
-  const getSectionTracks = (): Track[] => {
-    if (section === 'favorites') {
-      return tracks.filter((track) => track.isFavorite);
-    }
+  const sortTracks = (trackList: Track[]): Track[] => {
+    const sorted = [...trackList];
 
-    if (section === 'downloaded') {
-      return tracks.filter(
-        (track) => track.downloadState === 'completed'
-      );
-    }
+    switch (sortOrder) {
+      case 'recent':
+        return sorted.sort((a, b) => b.addedAt - a.addedAt);
 
-    if (section === 'local') {
-      return tracks.filter((track) => track.isLocalFile);
-    }
+      case 'oldest':
+        return sorted.sort((a, b) => a.addedAt - b.addedAt);
 
-    if (section === 'playlist' && selectedPlaylist) {
-      return tracks.filter((track) =>
-        selectedPlaylist.trackIds.includes(track.id)
-      );
-    }
+      case 'titleAsc':
+        return sorted.sort((a, b) =>
+          a.title.localeCompare(b.title)
+        );
 
-    return [];
+      case 'titleDesc':
+        return sorted.sort((a, b) =>
+          b.title.localeCompare(a.title)
+        );
+
+      case 'artistAsc':
+        return sorted.sort((a, b) =>
+          a.artist.localeCompare(b.artist)
+        );
+
+      default:
+        return sorted;
+    }
   };
 
-  /**
+
+  const getSectionTracks = (): Track[] => {
+    let sectionTracks: Track[] = [];
+
+    if (section === 'favorites') {
+      sectionTracks = tracks.filter(
+        (track) => track.isFavorite
+      );
+    } else if (section === 'downloaded') {
+      sectionTracks = tracks.filter(
+        (track) =>
+          track.downloadState === 'completed' &&
+          !track.isLocalFile
+      );
+    } else if (section === 'local') {
+      sectionTracks = tracks.filter(
+        (track) => track.isLocalFile
+      );
+    } else if (section === 'playlist' && selectedPlaylist) {
+      sectionTracks = selectedPlaylist.trackIds
+        .map((trackId) =>
+          tracks.find((track) => track.id === trackId)
+        )
+        .filter((track): track is Track => track !== undefined);
+    } else {
+      sectionTracks = tracks;
+    }
+
+    if (section === 'playlist') {
+      return sectionTracks;
+    }
+
+    return sortTracks(sectionTracks);
+  };
+
+    /**
    * Tarjeta individual de canción.
    */
   const renderTrackItem = ({ item }: { item: Track }) => (
@@ -252,7 +422,7 @@ export const LibraryScreen = () => {
           </View>
         )}
 
-        {item.downloadState === 'completed' && (
+        {item.downloadState === 'completed' && !item.isLocalFile && (
           <View style={styles.downloadBadge}>
             <Text style={styles.downloadBadgeText}>
               OFFLINE
@@ -379,7 +549,8 @@ export const LibraryScreen = () => {
             {
               tracks.filter(
                 (track) =>
-                  track.downloadState === 'completed'
+                  track.downloadState === 'completed' &&
+                  !track.isLocalFile
               ).length
             }{' '}
             canciones
@@ -409,7 +580,7 @@ export const LibraryScreen = () => {
         <TouchableOpacity
           activeOpacity={0.85}
           style={[styles.squareCard, styles.localCard]}
-          onPress={handleLocalFiles}
+          onPress={() => setSection('local')}
         >
           <View style={styles.cardIconCircle}>
             <Text style={styles.cardIcon}>▣</Text>
@@ -489,6 +660,25 @@ export const LibraryScreen = () => {
                   ? 'canción'
                   : 'canciones'}
               </Text>
+
+              <TouchableOpacity
+                style={styles.playlistMenuButton}
+                onPress={() => {
+                  setMenuPlaylist(playlist);
+                }}
+                hitSlop={{
+                  top: 10,
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
+                }}
+              >
+                <FontAwesome
+                  name="ellipsis-v"
+                  size={18}
+                  color="#B3B3B3"
+                />
+              </TouchableOpacity>
             </TouchableOpacity>
           ))}
         </View>
@@ -529,12 +719,34 @@ export const LibraryScreen = () => {
             <Text style={styles.backButtonText}>‹</Text>
           </TouchableOpacity>
 
-          <Text
-            style={styles.sectionTitle}
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
+          <View style={styles.sectionTitleRow}>
+            <Text
+              style={styles.sectionTitle}
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+
+            {section === 'local' && (
+              <TouchableOpacity
+                onPress={handleLocalFiles}
+                style={styles.addLocalButton}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.addLocalButtonText}>＋</Text>
+              </TouchableOpacity>
+            )}
+
+            {section !== 'playlist' && (
+              <TouchableOpacity
+                onPress={() => setShowSortMenu(true)}
+                style={styles.sortButton}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sortIcon}>☷</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {section === 'playlist' && (
             <TouchableOpacity
@@ -546,28 +758,47 @@ export const LibraryScreen = () => {
           )}
         </View>
 
-        <FlatList
-          data={sectionTracks}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTrackItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyIcon}>♪</Text>
+        {section === 'playlist' ? (
+          <FlatList
+            data={sectionTracks}
+            keyExtractor={(item) => item.id}
+            renderItem={renderTrackItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.centered}>
+                <Text style={styles.emptyIcon}>♪</Text>
 
-              <Text style={styles.emptyText}>
-                {section === 'favorites'
-                  ? 'Todavía no tienes canciones favoritas.'
-                  : section === 'downloaded'
-                    ? 'No tienes canciones descargadas.'
-                    : section === 'local'
-                      ? 'No tienes archivos locales.'
-                      : 'Esta playlist todavía está vacía.'}
-              </Text>
-            </View>
-          }
-        />
+                <Text style={styles.emptyText}>
+                  Esta playlist todavía está vacía.
+                </Text>
+              </View>
+            }
+          />
+        ) : (
+          <FlatList
+            data={sectionTracks}
+            keyExtractor={(item) => item.id}
+            renderItem={renderTrackItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.centered}>
+                <Text style={styles.emptyIcon}>♪</Text>
+
+                <Text style={styles.emptyText}>
+                  {section === 'favorites'
+                    ? 'Todavía no tienes canciones favoritas.'
+                    : section === 'downloaded'
+                      ? 'No tienes canciones descargadas.'
+                      : section === 'local'
+                        ? 'No tienes archivos locales.'
+                        : 'Esta playlist todavía está vacía.'}
+                </Text>
+              </View>
+            }
+          />
+        )}
       </View>
     );
   };
@@ -596,7 +827,9 @@ export const LibraryScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>
-              Nueva playlist
+              {editingPlaylist
+                ? 'Renombrar playlist'
+                : 'Nueva playlist'}
             </Text>
 
             <Text style={styles.modalSubtitle}>
@@ -625,15 +858,91 @@ export const LibraryScreen = () => {
 
               <TouchableOpacity
                 style={styles.modalCreateButton}
-                onPress={handleConfirmCreatePlaylist}
+                onPress={
+                  editingPlaylist
+                    ? handleRenamePlaylist
+                    : handleConfirmCreatePlaylist
+                }
               >
                 <Text style={styles.modalCreateText}>
-                  Crear
+                  {editingPlaylist ? 'Guardar' : 'Crear'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={menuPlaylist !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuPlaylist(null)}
+      >
+        <TouchableOpacity
+          style={styles.playlistMenuOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuPlaylist(null)}
+        >
+          <View style={styles.playlistMenu}>
+            <Text style={styles.playlistMenuTitle}>
+              {menuPlaylist?.name}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.playlistMenuOption}
+              onPress={() => {
+                if (!menuPlaylist) {
+                  return;
+                }
+
+                setEditingPlaylist(menuPlaylist);
+                setPlaylistName(menuPlaylist.name);
+                setMenuPlaylist(null);
+                setShowCreatePlaylist(true);
+              }}
+            >
+              <FontAwesome
+                name="pencil"
+                size={18}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.playlistMenuOptionText}>
+                Renombrar playlist
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.playlistMenuOption}
+              onPress={handleDeletePlaylist}
+            >
+              <FontAwesome
+                name="trash-o"
+                size={18}
+                color="#FF4D4D"
+              />
+
+              <Text
+                style={[
+                  styles.playlistMenuOptionText,
+                  styles.playlistDeleteText,
+                ]}
+              >
+                Eliminar playlist
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.playlistCancelButton}
+              onPress={() => setMenuPlaylist(null)}
+            >
+              <Text style={styles.playlistCancelText}>
+                Cancelar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       <Modal
@@ -747,6 +1056,104 @@ export const LibraryScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={showSortMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSortMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.sortMenuOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSortMenu(false)}
+        >
+          <View style={styles.sortMenu}>
+            <Text style={styles.sortMenuTitle}>
+              Ordenar canciones
+            </Text>
+
+            <TouchableOpacity
+              style={styles.sortMenuOption}
+              onPress={() => {
+                setSortOrder('recent');
+                setShowSortMenu(false);
+              }}
+            >
+              <Text style={styles.sortMenuIcon}>◷</Text>
+
+              <Text style={styles.sortMenuOptionText}>
+                Más recientes
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sortMenuOption}
+              onPress={() => {
+                setSortOrder('oldest');
+                setShowSortMenu(false);
+              }}
+            >
+              <Text style={styles.sortMenuIcon}>◴</Text>
+
+              <Text style={styles.sortMenuOptionText}>
+                Más antiguas
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sortMenuOption}
+              onPress={() => {
+                setSortOrder('titleAsc');
+                setShowSortMenu(false);
+              }}
+            >
+              <Text style={styles.sortMenuIcon}>A</Text>
+
+              <Text style={styles.sortMenuOptionText}>
+                Título A → Z
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sortMenuOption}
+              onPress={() => {
+                setSortOrder('titleDesc');
+                setShowSortMenu(false);
+              }}
+            >
+              <Text style={styles.sortMenuIcon}>Z</Text>
+
+              <Text style={styles.sortMenuOptionText}>
+                Título Z → A
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sortMenuOption}
+              onPress={() => {
+                setSortOrder('artistAsc');
+                setShowSortMenu(false);
+              }}
+            >
+              <Text style={styles.sortMenuIcon}>♪</Text>
+
+              <Text style={styles.sortMenuOptionText}>
+                Artista A → Z
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sortCancelButton}
+              onPress={() => setShowSortMenu(false)}
+            >
+              <Text style={styles.sortCancelText}>
+                Cancelar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       <SafeAreaView style={styles.container}>
@@ -1307,4 +1714,160 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  addLocalButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF5500',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  addLocalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '300',
+    lineHeight: 30,
+  },
+  sectionTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  playlistMenuButton: {
+    position: 'absolute',
+    right: 8,
+    top: 23,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playlistMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+    paddingBottom: 24,
+  },
+
+  playlistMenu: {
+    backgroundColor: '#1C1C1C',
+    borderRadius: 24,
+    marginHorizontal: 12,
+    padding: 20,
+    paddingBottom: 24,
+  },
+
+  playlistMenuTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 18,
+  },
+
+  playlistMenuOption: {
+    height: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+
+  playlistMenuOptionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  playlistDeleteText: {
+    color: '#FF4D4D',
+  },
+
+  playlistCancelButton: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: '#2A2A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  playlistCancelText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sortButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  sortIcon: {
+    color: '#B3B3B3',
+    fontSize: 24,
+    fontWeight: '400',
+  },
+
+  sortMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+    paddingBottom: 24,
+  },
+
+  sortMenu: {
+    backgroundColor: '#1C1C1C',
+    borderRadius: 24,
+    marginHorizontal: 12,
+    padding: 20,
+    paddingBottom: 24,
+  },
+
+  sortMenuTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+
+  sortMenuOption: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  sortMenuIcon: {
+    width: 32,
+    color: '#B3B3B3',
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginRight: 12,
+  },
+
+  sortMenuOptionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  sortCancelButton: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: '#2A2A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  sortCancelText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+
+
 });

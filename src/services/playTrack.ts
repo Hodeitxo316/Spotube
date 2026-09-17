@@ -8,7 +8,6 @@ import { TrackItem } from '../types/track';
 import {
   getAudioUrlForPlayback,
   triggerBackgroundDownload,
-  saveTrackToLibrary,
   isTrackDownloaded,
   getLocalFilePath,
 } from './downloadService';
@@ -59,7 +58,13 @@ export const setupAudioPlayer = async (): Promise<void> => {
 
 export const playTrack = async (track: TrackItem): Promise<void> => {
   try {
-    const { url, isLocal } = await getAudioUrlForPlayback(track);
+    const isLocalFile =
+      track.streamUrl?.startsWith('content://') ||
+      track.streamUrl?.startsWith('file://');
+
+    const { url, isLocal } = isLocalFile
+      ? { url: track.streamUrl!, isLocal: true }
+      : await getAudioUrlForPlayback(track);
 
     if (!url) {
       throw new Error('No se pudo obtener una URL de reproducción válida.');
@@ -89,14 +94,15 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
     await TrackPlayer.play();
 
     console.log(
-      `[playTrack] 🎵 Reproduciendo: ${track.title} (${
-        isLocal ? 'OFFLINE' : 'STREAMING'
+      `[playTrack] 🎵 Reproduciendo: ${track.title} (${isLocal ? 'OFFLINE' : 'STREAMING'
       })`
     );
 
-    if (isLocal) {
-      saveTrackToLibrary(track);
-    } else {
+      if (isLocal) {
+        console.log(
+          `[playTrack] 📁 Archivo local reproducido: "${track.title}"`
+        );
+      } else {
       requestAnimationFrame(() => {
         setTimeout(() => {
           triggerBackgroundDownload(track, url);

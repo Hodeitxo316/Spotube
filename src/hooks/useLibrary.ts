@@ -21,9 +21,13 @@ export const useLibrary = () => {
       let filtered = allTracks;
 
       if (filter === 'favorites') {
-        filtered = allTracks.filter((t) => t.isFavorite);
+        filtered = allTracks.filter(
+          (t) => t.isFavorite && !t.isLocalFile
+        );
       } else if (filter === 'downloaded') {
-        filtered = allTracks.filter((t) => t.downloadState === 'completed');
+        filtered = allTracks.filter(
+          (t) => t.downloadState === 'completed' && !t.isLocalFile
+        );
       }
 
       filtered.sort((a, b) => b.addedAt - a.addedAt);
