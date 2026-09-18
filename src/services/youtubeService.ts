@@ -604,7 +604,18 @@ class YouTubeService {
 
   public async testGeneralSearch(
     query: string
-  ): Promise<'artist' | 'song' | null> {
+  ): Promise<
+    | {
+      type: 'artist';
+      artistId: string;
+      artistName: string;
+      artistThumbnail: string;
+    }
+    | {
+      type: 'song';
+    }
+    | null
+  > {
     try {
       await this.init();
 
@@ -625,15 +636,25 @@ class YouTubeService {
 
         console.log('[TEST] SHELF:', item.type);
 
-        if (item.type !== 'MusicCardShelf') {
+        if (item.type !== 'MusicCardShelf' && item.type !== 'MusicShelf') {
           continue;
         }
+
+        console.log(
+          '[TEST] SHELF KEYS:',
+          Object.keys(item)
+        );
 
         const title =
           item?.title?.text || 'SIN TÍTULO';
 
         const endpoint =
           item?.title?.runs?.[0]?.endpoint;
+
+        console.log(
+          '[TEST] ARTIST ENDPOINT PAYLOAD:',
+          endpoint?.payload
+        );
 
         const endpointName =
           endpoint?.name || 'SIN ENDPOINT';
@@ -652,14 +673,47 @@ class YouTubeService {
         console.log('[TEST] ENDPOINT:', endpointName);
         console.log('[TEST] PAGE TYPE:', pageType);
 
+        console.log(
+          '[TEST] ARTIST THUMBNAIL:',
+          item?.thumbnail
+        );
+
         if (pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
+
+          console.log(
+            '[TEST] ARTIST CARD SONGS:',
+            item?.contents?.map((content: any) => ({
+              type: content?.item_type,
+              id: content?.id,
+              title: content?.flex_columns?.[0]?.title?.text,
+            }))
+          );
+
+          const artistId =
+            endpoint?.payload?.browseId || '';
+
           console.log('[TEST] RESULTADO FINAL: artist');
-          return 'artist';
+          console.log('[TEST] ARTIST ID:', artistId);
+
+          if (!artistId) {
+            return null;
+          }
+
+          return {
+            type: 'artist',
+            artistId,
+            artistName: title,
+            artistThumbnail:
+              item?.thumbnail?.contents?.[0]?.url || '',
+          };
         }
 
         if (endpointName === 'watchEndpoint') {
           console.log('[TEST] RESULTADO FINAL: song');
-          return 'song';
+
+          return {
+            type: 'song',
+          };
         }
       }
 
@@ -801,9 +855,20 @@ class YouTubeService {
         return [];
       }
 
+      console.log('[TIME] ANTES getArtist:', Date.now());
+
+
       const artistPage = await this.innertube.music.getArtist(
         artistId
       );
+
+      console.log(
+        '[TEST] ARTIST PAGE KEYS:',
+        Object.keys(artistPage || {})
+      );
+
+      console.log('[TIME] DESPUÉS getArtist:', Date.now());
+
 
       const firstSection = artistPage?.sections?.[0];
 
@@ -815,26 +880,25 @@ class YouTubeService {
         playlistId
       );
 
+      let playlistItems: any[] = [];
+
       if (playlistId) {
         try {
+
+          console.log('[TIME] ANTES getPlaylist:', Date.now());
+
           const playlist =
             await this.innertube.music.getPlaylist(
               playlistId
             );
 
-          console.log(
-            '[TEST] PLAYLIST ITEMS:',
-            playlist?.items?.length
-          );
+          playlistItems = playlist?.items || [];
 
           console.log(
-            '[TEST] PLAYLIST SONGS:',
-            playlist?.items?.map((item: any) => ({
-              type: item?.type,
-              id: item?.id,
-              title: item?.title?.text || item?.title,
-            }))
+            '[TEST] PLAYLIST ITEMS:',
+            playlistItems.length
           );
+
         } catch (error) {
           console.warn(
             '[TEST] ERROR PLAYLIST:',
@@ -843,62 +907,10 @@ class YouTubeService {
         }
       }
 
-      console.log(
-        '[TEST] FIRST SECTION ENDPOINT:',
-        firstSection?.endpoint
-      );
-
-      console.log(
-        '[TEST] CONTINUATION TOKEN:',
-        firstSection?.continuation
-      );
-
-      console.log(
-        '[TEST] FIRST SECTION KEYS:',
-        Object.keys(firstSection || {})
-      );
-
-      console.log(
-        '[TEST] FIRST MUSIC SHELF:',
-        firstSection?.contents?.map((item: any) => ({
-          type: item?.type,
-          itemType: item?.item_type,
-          id: item?.id,
-          title: item?.title?.text || item?.title,
-        }))
-      );
-
-      console.log(
-        '[TEST] ARTIST SECTIONS:',
-        artistPage?.sections?.map((section: any) => ({
-          type: section?.type,
-          title: section?.header?.title?.text,
-          contents: section?.contents?.length,
-        }))
-      );
-
-
-
       let songs =
-        firstSection?.contents || [];
-
-      if (playlistId) {
-        try {
-          const playlist =
-            await this.innertube.music.getPlaylist(
-              playlistId
-            );
-
-          if (playlist?.items?.length) {
-            songs = playlist.items;
-          }
-        } catch (error) {
-          console.warn(
-            '[YouTubeService] Error obteniendo canciones completas del artista:',
-            error
-          );
-        }
-      }
+        playlistItems.length > 0
+          ? playlistItems
+          : firstSection?.contents || [];
 
       if (firstSection?.continuation) {
         try {

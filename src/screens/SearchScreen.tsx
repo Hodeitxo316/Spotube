@@ -18,6 +18,15 @@ import { playTrack } from '../services/playTrack';
 import { TrackItem } from '../types/track';
 import { ArtistItem } from '../types/artist';
 
+const searchCache = new Map<
+  string,
+  {
+    type: 'artist' | 'song' | null;
+    artist: ArtistItem | null;
+    tracks: TrackItem[];
+  }
+>();
+
 export const SearchScreen = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TrackItem[]>([]);
@@ -28,12 +37,29 @@ export const SearchScreen = () => {
   const [featuredImageError, setFeaturedImageError] = useState(false);
   const [searchType, setSearchType] = useState<'song' | 'artist' | null>(null);
 
-  // =========================================================
+   // =========================================================
   // BÚSQUEDA
   // =========================================================
 
+  const searchRequestId = React.useRef(0);
+  const latestQueryRef = React.useRef('');
+
   useEffect(() => {
-    if (!query || query.trim().length < 2) {
+
+    console.log(
+      '[SEARCH EFFECT] QUERY:',
+      JSON.stringify(query)
+    );
+
+    const requestId = ++searchRequestId.current;
+
+    const normalizedQuery = query.trim();
+
+    latestQueryRef.current = normalizedQuery.toLowerCase();
+
+    const searchKey = normalizedQuery.toLowerCase();
+
+    if (!query || normalizedQuery.length < 3) {
       setResults([]);
       setArtist(null);
       setLoading(false);
@@ -49,18 +75,76 @@ export const SearchScreen = () => {
     setSearchType(null);
 
     const timer = setTimeout(async () => {
-      try {
-        const [tracks, artistData] = await Promise.all([
-          youtubeService.searchTracks(query),
-          youtubeService.searchArtist(query).catch(() => null),
-        ]);
 
+      if (requestId !== searchRequestId.current) {
+        return;
+      }
+
+      if (searchKey !== latestQueryRef.current) {
+        return;
+      }
+
+      const cacheKey = normalizedQuery.toLowerCase();
+
+      const cached = searchCache.get(cacheKey);
+
+      if (cached) {
+        console.log('[CACHE] Resultado encontrado:', cacheKey);
+
+        setResults(cached.tracks);
+        setArtist(cached.artist);
+        setSearchType(cached.type);
+        setLoading(false);
+        setArtistLoading(false);
+
+        return;
+      }
+
+      try {
+        console.log(
+          '[TIME] ANTES testGeneralSearch:',
+          Date.now()
+        );
+
+        if (
+          requestId !== searchRequestId.current ||
+          searchKey !== latestQueryRef.current
+        ) {
+          return;
+        }
+
+        const type =
+          await youtubeService.testGeneralSearch(
+            normalizedQuery
+          );
+
+        console.log(
+          '[TIME] DESPUÉS testGeneralSearch:',
+          Date.now()
+        );
+
+        if (
+          requestId !== searchRequestId.current ||
+          searchKey !== latestQueryRef.current
+        ) {
+          return;
+        }
+
+        let tracks: TrackItem[] = [];
+        let artistData: ArtistItem | null = null;
         let artistTracks: TrackItem[] = [];
 
-        if (artistData) {
-          artistTracks = await youtubeService.searchArtistTracks(
-            artistData.id
-          );
+        if (type?.type === 'artist') {
+          artistData = {
+            id: type.artistId,
+            name: type.artistName,
+            thumbnail: type.artistThumbnail,
+          };
+
+          artistTracks =
+            await youtubeService.searchArtistTracks(
+              type.artistId
+            );
 
           console.log(
             '[TEST] CANCIONES DEL ARTISTA:',
@@ -68,46 +152,72 @@ export const SearchScreen = () => {
             '→',
             artistTracks.map(track => track.title)
           );
+        } else if (type?.type === 'song') {
+          tracks =
+            await youtubeService.searchTracks(
+              normalizedQuery
+            );
         }
 
-        const type = await youtubeService.testGeneralSearch(query);
-
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          requestId === searchRequestId.current &&
+          searchKey === latestQueryRef.current
+        ) {
           console.log(
             '[SearchScreen] Tipo de búsqueda:',
-            query,
+            normalizedQuery,
             '→',
             type
           );
 
           setResults(
-            type === 'artist'
+            type?.type === 'artist'
               ? artistTracks
               : tracks
           );
 
+          console.log(
+            '[TIME] ANTES actualizar resultados:',
+            Date.now()
+          );
+
           setArtist(artistData);
-          setSearchType(type);
+          setSearchType(type?.type || null);
         }
 
       } catch (err) {
-        if (!cancelled) {
-          console.error('[SearchScreen] Error al buscar:', err);
+        if (
+          !cancelled &&
+          requestId === searchRequestId.current &&
+          searchKey === latestQueryRef.current
+        ) {
+          console.error(
+            '[SearchScreen] Error al buscar:',
+            err
+          );
+
           setResults([]);
           setArtist(null);
         }
       } finally {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          requestId === searchRequestId.current &&
+          searchKey === latestQueryRef.current
+        ) {
           setLoading(false);
           setArtistLoading(false);
         }
       }
-    }, 350);
+
+    }, 300);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
+
   }, [query]);
 
   // =========================================================
