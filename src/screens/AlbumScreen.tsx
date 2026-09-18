@@ -1,13 +1,13 @@
 import React from 'react';
-import { RouteProp, useRoute } from '@react-navigation/native';
 import {
+    RouteProp,
+    useRoute,
     useNavigation,
 } from '@react-navigation/native';
 import {
     View,
     Text,
     Image,
-    ImageBackground,
     FlatList,
     TouchableOpacity,
     StyleSheet,
@@ -26,11 +26,15 @@ type AlbumRouteParams = {
     };
 };
 
-type AlbumRouteProp = RouteProp<AlbumRouteParams, 'Album'>;
+type AlbumRouteProp =
+    RouteProp<AlbumRouteParams, 'Album'>;
 
 export const AlbumScreen = () => {
-    const route = useRoute<AlbumRouteProp>();
-    const navigation = useNavigation();
+    const route =
+        useRoute<AlbumRouteProp>();
+
+    const navigation =
+        useNavigation();
 
     const {
         albumName,
@@ -39,40 +43,66 @@ export const AlbumScreen = () => {
         tracks,
     } = route.params;
 
-    const handlePlayTrack = async (track: TrackItem) => {
+    const handlePlayTrack = async (
+        track: TrackItem
+    ) => {
         await playTrack(track);
     };
 
     return (
         <SafeAreaView style={styles.container}>
+
             <FlatList
                 data={tracks}
-                keyExtractor={(item, index) => `${item.id}-${index}`}
+                keyExtractor={(item, index) =>
+                    `${item.id}-${index}`
+                }
                 showsVerticalScrollIndicator={false}
+
                 ListHeaderComponent={
                     <View style={styles.header}>
 
                         <View style={styles.albumHero}>
 
                             <Image
-                                source={{ uri: albumArtwork }}
-                                style={styles.albumHeroArtwork}
+                                source={{
+                                    uri: albumArtwork,
+                                }}
+                                style={
+                                    styles.albumHeroArtwork
+                                }
                                 resizeMode="cover"
                             />
 
-                            <View style={styles.albumHeroOverlay} />
+                            <View
+                                style={
+                                    styles.albumHeroOverlay
+                                }
+                            />
 
                             <TouchableOpacity
                                 style={styles.backButton}
-                                onPress={() => navigation.goBack()}
+                                onPress={() =>
+                                    navigation.goBack()
+                                }
                                 activeOpacity={0.8}
                             >
-                                <Text style={styles.backButtonText}>‹</Text>
+                                <Text
+                                    style={
+                                        styles.backButtonText
+                                    }
+                                >
+                                    ‹
+                                </Text>
                             </TouchableOpacity>
 
                         </View>
 
-                        <View style={styles.albumInfoContainer}>
+                        <View
+                            style={
+                                styles.albumInfoContainer
+                            }
+                        >
 
                             <Text
                                 style={styles.albumName}
@@ -88,40 +118,78 @@ export const AlbumScreen = () => {
                                 {artistName}
                             </Text>
 
-                            <View style={styles.albumMetaRow}>
+                            <View
+                                style={
+                                    styles.albumMetaRow
+                                }
+                            >
 
-                                <View style={styles.albumDot} />
+                                <View
+                                    style={styles.albumDot}
+                                />
 
-                                <Text style={styles.albumInfo}>
+                                <Text
+                                    style={
+                                        styles.albumInfo
+                                    }
+                                >
                                     ÁLBUM
                                 </Text>
 
-                                <Text style={styles.albumSeparator}>
+                                <Text
+                                    style={
+                                        styles.albumSeparator
+                                    }
+                                >
                                     ·
                                 </Text>
 
-                                <Text style={styles.albumInfo}>
-                                    {tracks.length} canciones
+                                <Text
+                                    style={
+                                        styles.albumInfo
+                                    }
+                                >
+                                    {tracks.length}{' '}
+                                    canciones
                                 </Text>
 
                             </View>
 
-                            <View style={styles.albumActions}>
+                            <View
+                                style={
+                                    styles.albumActions
+                                }
+                            >
 
                                 <TouchableOpacity
-                                    style={styles.playAlbumButton}
+                                    style={
+                                        styles.playAlbumButton
+                                    }
                                     activeOpacity={0.8}
                                     onPress={() => {
-                                        if (tracks.length > 0) {
-                                            handlePlayTrack(tracks[0]);
+                                        if (
+                                            tracks.length >
+                                            0
+                                        ) {
+                                            handlePlayTrack(
+                                                tracks[0]
+                                            );
                                         }
                                     }}
                                 >
-                                    <Text style={styles.playAlbumIcon}>
+                                    <Text
+                                        style={
+                                            styles.playAlbumIcon
+                                        }
+                                    >
                                         ▶
                                     </Text>
 
-                                    <Text style={styles.playAlbumText}>
+                                    <Text
+                                        style={
+                                            styles.playAlbumText
+                                        }
+                                    >
                                         REPRODUCIR
                                     </Text>
                                 </TouchableOpacity>
@@ -130,52 +198,94 @@ export const AlbumScreen = () => {
 
                         </View>
 
-                        <View style={styles.tracksHeader}>
+                        <View
+                            style={
+                                styles.tracksHeader
+                            }
+                        >
 
-                            <Text style={styles.tracksHeaderText}>
+                            <Text
+                                style={
+                                    styles.tracksHeaderText
+                                }
+                            >
                                 CANCIONES
                             </Text>
 
-                            <View style={styles.tracksHeaderLine} />
+                            <View
+                                style={
+                                    styles.tracksHeaderLine
+                                }
+                            />
 
                         </View>
 
                     </View>
                 }
-                renderItem={({ item, index }) => (
+
+                renderItem={({
+                    item,
+                    index,
+                }) => (
                     <TouchableOpacity
                         style={styles.trackRow}
-                        onPress={() => handlePlayTrack(item)}
+                        onPress={() =>
+                            handlePlayTrack(item)
+                        }
                         activeOpacity={0.7}
                     >
-                        <Text style={styles.trackNumber}>
+
+                        <Text
+                            style={
+                                styles.trackNumber
+                            }
+                        >
                             {index + 1}
                         </Text>
 
                         <Image
-                            source={{ uri: item.artwork }}
-                            style={styles.trackArtwork}
+                            source={{
+                                uri: item.artwork,
+                            }}
+                            style={
+                                styles.trackArtwork
+                            }
                         />
 
-                        <View style={styles.trackInfo}>
+                        <View
+                            style={
+                                styles.trackInfo
+                            }
+                        >
+
                             <Text
-                                style={styles.trackTitle}
+                                style={
+                                    styles.trackTitle
+                                }
                                 numberOfLines={1}
                             >
                                 {item.title}
                             </Text>
 
                             <Text
-                                style={styles.trackArtist}
+                                style={
+                                    styles.trackArtist
+                                }
                                 numberOfLines={1}
                             >
                                 {item.artist}
                             </Text>
+
                         </View>
+
                     </TouchableOpacity>
                 )}
-                contentContainerStyle={styles.content}
+
+                contentContainerStyle={
+                    styles.content
+                }
             />
+
         </SafeAreaView>
     );
 };
@@ -192,13 +302,6 @@ const styles = StyleSheet.create({
 
     header: {
         paddingBottom: 25,
-    },
-
-    albumArtwork: {
-        width: 260,
-        height: 260,
-        borderRadius: 12,
-        marginBottom: 24,
     },
 
     albumName: {
@@ -262,54 +365,6 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
 
-    albumBanner: {
-        width: '100%',
-        height: 330,
-        justifyContent: 'flex-end',
-        position: 'relative',
-    },
-
-    albumBannerWrapper: {
-        width: '100%',
-        height: 380,
-        position: 'relative',
-        backgroundColor: '#111217',
-    },
-
-    albumGradient: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 140,
-        backgroundColor: 'rgba(17, 18, 23, 0.75)',
-    },
-
-    backButton: {
-        position: 'absolute',
-        top: 45,
-        left: 18,
-        width: 46,
-        height: 46,
-        borderRadius: 23,
-        backgroundColor: 'rgba(17, 18, 23, 0.75)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 20,
-    },
-
-    backButtonText: {
-        color: '#FFFFFF',
-        fontSize: 32,
-        fontWeight: '300',
-        lineHeight: 36,
-    },
-
-    albumInfoContainer: {
-        paddingHorizontal: 20,
-        paddingTop: 12,
-    },
-
     albumHero: {
         width: '100%',
         height: 390,
@@ -331,6 +386,32 @@ const styles = StyleSheet.create({
 
         experimental_backgroundImage:
             'linear-gradient(180deg, rgba(17,18,23,0), rgba(17,18,23,0.35), #111217)',
+    },
+
+    backButton: {
+        position: 'absolute',
+        top: 45,
+        left: 18,
+        width: 46,
+        height: 46,
+        borderRadius: 23,
+        backgroundColor:
+            'rgba(17, 18, 23, 0.75)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 20,
+    },
+
+    backButtonText: {
+        color: '#FFFFFF',
+        fontSize: 32,
+        fontWeight: '300',
+        lineHeight: 36,
+    },
+
+    albumInfoContainer: {
+        paddingHorizontal: 20,
+        paddingTop: 12,
     },
 
     albumMetaRow: {

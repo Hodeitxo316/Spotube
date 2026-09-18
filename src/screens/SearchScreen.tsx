@@ -28,7 +28,14 @@ type RootStackParamList = {
     albumArtwork: string;
     tracks: TrackItem[];
   };
+  Artist: {
+    artistId: string;
+    artistName: string;
+    artistThumbnail: string;
+  };
 };
+
+
 
 type SearchNavigationProp =
   NativeStackNavigationProp<RootStackParamList>;
@@ -135,6 +142,9 @@ export const SearchScreen = () => {
           Date.now()
         );
 
+        setLoading(true);
+        setArtistLoading(true);
+
         if (
           requestId !== searchRequestId.current ||
           searchKey !== latestQueryRef.current
@@ -170,15 +180,21 @@ export const SearchScreen = () => {
             thumbnail: type.artistThumbnail,
           };
 
-          artistTracks =
-            await youtubeService.searchArtistTracks(
-              type.artistId
+          console.log('[TIME] ANTES getArtistDetails:', Date.now());
+
+          const artistDetails =
+            await youtubeService.getArtistDetails(
+              type.artistId,
+              type.artistName,
+              type.artistThumbnail
             );
 
+          console.log('[TIME] DESPUÉS getArtistDetails:', Date.now());
+
+          artistTracks = artistDetails.topSongs;
+
           console.log(
-            '[TEST] CANCIONES DEL ARTISTA:',
-            artistData.name,
-            '→',
+            '[ARTIST] TOP SONGS:',
             artistTracks.map(track => track.title)
           );
 
@@ -223,19 +239,20 @@ export const SearchScreen = () => {
             type
           );
 
+          console.log('[TIME] ANTES setResults:', Date.now());
+
           setResults(
             type?.type === 'artist'
               ? artistTracks
               : tracks
           );
 
-          console.log(
-            '[TIME] ANTES actualizar resultados:',
-            Date.now()
-          );
+          console.log('[TIME] DESPUÉS setResults:', Date.now());
 
           setArtist(artistData);
           setSearchType(type?.type || null);
+
+          console.log('[TIME] FIN SEARCH EFFECT:', Date.now());
         }
 
       } catch (err) {
@@ -491,30 +508,48 @@ export const SearchScreen = () => {
             )}
 
             {/* =====================================================
-                ARTISTA
-            ===================================================== */}
+                        ARTISTA
+===================================================== */}
 
             {artist && searchType === 'artist' && !artistLoading && (
               <TouchableOpacity
                 style={styles.artistCard}
                 activeOpacity={0.88}
+                onPress={() =>
+                  navigation.navigate('Artist', {
+                    artistId: artist.id,
+                    artistName: artist.name,
+                    artistThumbnail: artist.thumbnail,
+                  })
+                }
               >
                 <Image
-                  source={{ uri: artist.thumbnail }}
+                  source={{
+                    uri: artist.thumbnail.replace(
+                      /w\d+-h\d+/,
+                      'w600-h600'
+                    ),
+                  }}
                   style={styles.artistImage}
                   resizeMode="cover"
                 />
 
-                <View style={styles.artistInfo}>
+                <View style={styles.artistOverlay} />
+
+                <View style={styles.artistContent}>
                   <Text style={styles.artistLabel}>
                     ARTISTA
                   </Text>
 
                   <Text
                     style={styles.artistName}
-                    numberOfLines={1}
+                    numberOfLines={2}
                   >
                     {artist.name}
+                  </Text>
+
+                  <Text style={styles.artistAction}>
+                    VER ARTISTA
                   </Text>
                 </View>
 
@@ -524,83 +559,59 @@ export const SearchScreen = () => {
               </TouchableOpacity>
             )}
 
+            {/* =====================================================
+    ÁLBUM
+===================================================== */}
+
             {album && searchType === 'album' && !artistLoading && (
-              <View style={styles.mainSection}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionEyebrow}>
+              <TouchableOpacity
+                style={styles.albumCard}
+                activeOpacity={0.88}
+                onPress={() =>
+                  navigation.navigate('Album', {
+                    albumName: album.name,
+                    artistName: album.artistName,
+                    albumArtwork: album.thumbnail,
+                    tracks: results,
+                  })
+                }
+              >
+                <Image
+                  source={{
+                    uri: album.thumbnail,
+                  }}
+                  style={styles.albumImage}
+                  resizeMode="cover"
+                />
+
+                <View style={styles.albumContent}>
+                  <Text style={styles.albumLabel}>
                     ÁLBUM
                   </Text>
 
-                  <View style={styles.sectionLine} />
+                  <Text
+                    style={styles.albumName}
+                    numberOfLines={2}
+                  >
+                    {album.name}
+                  </Text>
+
+                  <Text
+                    style={styles.albumArtist}
+                    numberOfLines={1}
+                  >
+                    {album.artistName}
+                  </Text>
+
+                  <Text style={styles.albumAction}>
+                    VER ÁLBUM
+                  </Text>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.featuredCard}
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    navigation.navigate('Album', {
-                      albumName: album.name,
-                      artistName: album.artistName,
-                      albumArtwork: album.thumbnail,
-                      tracks: results,
-                    })
-                  }
-                >
-                  {/* IMAGEN */}
-                  <View style={styles.featuredImageWrapper}>
-                    <Image
-                      source={{ uri: album.thumbnail }}
-                      style={styles.featuredArtwork}
-                      resizeMode="cover"
-                    />
-
-                    <View style={styles.imageOverlay} />
-
-                    <View style={styles.featuredBadge}>
-                      <Text style={styles.featuredBadgeText}>
-                        AL
-                      </Text>
-                    </View>
-
-                    <View style={styles.featuredPlayButton}>
-                      <Text style={styles.featuredPlayIcon}>
-                        ▶
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* INFORMACIÓN */}
-                  <View style={styles.featuredInfo}>
-                    <Text
-                      style={styles.featuredTitle}
-                      numberOfLines={2}
-                    >
-                      {album.name}
-                    </Text>
-
-                    <Text
-                      style={styles.featuredArtist}
-                      numberOfLines={1}
-                    >
-                      {results[0]?.artist || 'Artista desconocido'}
-                    </Text>
-
-                    <View style={styles.featuredBottom}>
-                      <View style={styles.featuredTag}>
-                        <View style={styles.featuredTagDot} />
-
-                        <Text style={styles.featuredTagText}>
-                          ÁLBUM
-                        </Text>
-                      </View>
-
-                      <Text style={styles.featuredAction}>
-                        VER ÁLBUM
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </View>
+                <View style={styles.albumArrow}>
+                  <Text style={styles.albumArrowText}>›</Text>
+                </View>
+              </TouchableOpacity>
             )}
 
             {/* =====================================================
@@ -1078,55 +1089,154 @@ const styles = StyleSheet.create({
   },
 
   // ARTIST
+
   artistCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    height: 210,
+    borderRadius: 24,
+    overflow: 'hidden',
     backgroundColor: '#191B22',
-    borderRadius: 18,
-    padding: 12,
     marginTop: 18,
     marginBottom: 4,
+    position: 'relative',
   },
 
   artistImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
 
-  artistInfo: {
-    flex: 1,
-    marginLeft: 14,
+  artistOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '75%',
+
+    experimental_backgroundImage:
+      'linear-gradient(180deg, rgba(17,18,23,0), rgba(17,18,23,0.35), rgba(17,18,23,0.98))',
+  },
+
+  artistContent: {
+    position: 'absolute',
+    left: 18,
+    right: 60,
+    bottom: 18,
   },
 
   artistLabel: {
     color: '#FF5500',
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 4,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    marginBottom: 5,
   },
 
   artistName: {
     color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 27,
+    fontWeight: '900',
+  },
+
+  artistAction: {
+    color: '#B8BBC4',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginTop: 7,
   },
 
   artistArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#252832',
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FF5500',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 10,
   },
 
   artistArrowText: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '300',
     marginTop: -3,
+  },
+
+  albumCard: {
+    height: 180,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#191B22',
+    marginTop: 2,
+    marginBottom: 10,
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+  },
+
+  albumImage: {
+    width: 160,
+    height: 160,
+    borderRadius: 16,
+    backgroundColor: '#24262D',
+  },
+
+  albumContent: {
+    flex: 1,
+    marginLeft: 16,
+    paddingRight: 32,
+  },
+
+  albumLabel: {
+    color: '#FF5500',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    marginBottom: 7,
+  },
+
+  albumName: {
+    color: '#FFFFFF',
+    fontSize: 21,
+    fontWeight: '900',
+    lineHeight: 25,
+  },
+
+  albumArtist: {
+    color: '#9A9CA5',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 7,
+  },
+
+  albumAction: {
+    color: '#6F717A',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.3,
+    marginTop: 12,
+  },
+
+  albumArrow: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FF5500',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  albumArrowText: {
+    color: '#FFFFFF',
+    fontSize: 25,
+    fontWeight: '300',
+    marginTop: -2,
   },
 });

@@ -10,9 +10,26 @@ import { PlayerScreen } from '../screens/PlayerScreen';
 import { AlbumScreen } from '../screens/AlbumScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { COLORS } from '../constants/theme';
+import { ArtistScreen } from '../screens/ArtistScreen';
+
+type RootStackParamList = {
+  Main: undefined;
+  Album: {
+    albumName: string;
+    artistName: string;
+    albumArtwork: string;
+    tracks: any[];
+  };
+  Artist: {
+    artistId: string;
+    artistName: string;
+    artistThumbnail: string;
+  };
+};
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
+const Stack =
+  createNativeStackNavigator<RootStackParamList>();
 
 const TabNavigator = () => (
   <Tab.Navigator
@@ -58,6 +75,8 @@ export const RootNavigator = () => {
             headerShown: false,
           }}
         >
+
+
           <Stack.Screen
             name="Main"
             component={TabNavigator}
@@ -66,6 +85,11 @@ export const RootNavigator = () => {
           <Stack.Screen
             name="Album"
             component={AlbumScreen}
+          />
+
+          <Stack.Screen
+            name="Artist"
+            component={ArtistScreen}
           />
         </Stack.Navigator>
 

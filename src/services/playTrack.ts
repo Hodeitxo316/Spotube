@@ -93,6 +93,15 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
     }
 
     await TrackPlayer.add(trackPayload);
+
+    console.log('[PLAY DEBUG]', {
+      id: track.id,
+      title: track.title,
+      duration: track.duration,
+      streamUrl: track.streamUrl,
+      url,
+    });
+
     await TrackPlayer.play();
 
     console.log(`[Playback] ⏱️ TrackPlayer tardó ${Date.now() - playerStartTime} ms`);
@@ -102,11 +111,11 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
       })`
     );
 
-      if (isLocal) {
-        console.log(
-          `[playTrack] 📁 Archivo local reproducido: "${track.title}"`
-        );
-      } else {
+    if (isLocal) {
+      console.log(
+        `[playTrack] 📁 Archivo local reproducido: "${track.title}"`
+      );
+    } else {
       requestAnimationFrame(() => {
         setTimeout(() => {
           triggerBackgroundDownload(track, url);

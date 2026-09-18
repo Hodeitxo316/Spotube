@@ -866,6 +866,27 @@ class YouTubeService {
         );
 
       console.log(
+        '[ALBUM ARTISTA HEADER TEXT]:',
+        album?.header?.strapline_text_one?.text
+      );
+
+      console.log(
+        '[ALBUM HEADER FEATURE]:',
+        {
+          title: album?.header?.title,
+          subtitle: album?.header?.subtitle,
+          strapline: album?.header?.strapline_text_one,
+          secondSubtitle: album?.header?.second_subtitle,
+          description: album?.header?.description,
+        }
+      );
+
+      console.log(
+        '[ALBUM HEADER ARTISTA]:',
+        album?.header?.subtitle
+      );
+
+      console.log(
         '[ALBUM TRACKS TEST] ALBUM OBTENIDO'
       );
 
@@ -935,7 +956,8 @@ class YouTubeService {
   }
 
   public async searchAlbumTracks(
-    albumId: string
+    albumId: string,
+    fallbackArtist?: string
   ): Promise<TrackItem[]> {
     try {
       await this.init();
@@ -949,14 +971,10 @@ class YouTubeService {
           albumId
         );
 
+
       console.log(
         '[ALBUM] CONTENTS DIRECTOS:',
         album?.contents?.length || 0
-      );
-
-      console.log(
-        '[ALBUM] PRIMER CONTENT DIRECTO:',
-        album?.contents?.[0]
       );
 
       const contents =
@@ -964,12 +982,52 @@ class YouTubeService {
 
       const tracks: TrackItem[] = [];
 
+      const albumArtist =
+        album?.header?.strapline_text_one?.text ||
+        fallbackArtist ||
+        'Artista desconocido';
+
       for (const item of contents) {
+
+        console.log(
+          '[ALBUM TRACK DEBUG]',
+          {
+            id: item?.id,
+            title: item?.title?.text,
+            artists: item?.artists,
+            flexColumns: item?.flex_columns,
+            author: item?.author,
+          }
+        );
+
         const id = item?.id || '';
 
         const videoId =
           item?.endpoint?.payload?.videoId ||
           id;
+
+        console.log(
+          '[FEATURE DATA]:',
+          {
+            title: item?.flex_columns?.[0]?.title?.text,
+            album: item?.album,
+            artists: item?.artists,
+            authors: item?.authors,
+            name: item?.name,
+            subtitle: item?.subtitle,
+            author: item?.author,
+          }
+        );
+
+        console.log(
+          '[VIDEO ARTISTA DEBUG]:',
+          item?.endpoint?.payload?.videoId
+        );
+
+        console.log(
+          '[ALBUM ITEM COMPLETO PARA FEATURE]:',
+          item
+        );
 
         const title =
           item?.title?.text ||
@@ -977,13 +1035,13 @@ class YouTubeService {
           '';
 
         const artist =
+          item?.flex_columns?.[1]?.title?.text ||
           item?.artists
             ?.map((artist: any) => artist?.name)
             .filter(Boolean)
             .join(', ') ||
-          item?.flex_columns?.[1]?.title?.text ||
           item?.author?.name ||
-          'Artista desconocido';
+          albumArtist;
 
         const artwork =
           videoId
@@ -1142,8 +1200,387 @@ class YouTubeService {
       return null;
     }
 
+  }
 
+  public async getArtistAlbums(
+    artistId: string
+  ): Promise<
+    {
+      id: string;
+      name: string;
+      thumbnail: string;
+    }[]
+  > {
+    try {
+      await this.init();
 
+      if (!this.innertube?.music) {
+        return [];
+      }
+
+      const artistPage =
+        await this.innertube.music.getArtist(
+          artistId
+        );
+
+      const albumsSection =
+        artistPage?.sections?.find(
+          (section: any) =>
+            section?.type === 'MusicCarouselShelf' &&
+            section?.header?.title?.text === 'Albums'
+        );
+
+      if (!albumsSection) {
+        return [];
+      }
+
+      const albums =
+        albumsSection?.contents || [];
+
+      return albums
+        .filter(
+          (item: any) =>
+            item?.item_type === 'album'
+        )
+        .map((item: any) => ({
+          id:
+            item?.endpoint?.payload?.browseId ||
+            item?.id ||
+            '',
+
+          name:
+            item?.title?.text ||
+            '',
+
+          thumbnail:
+            item?.thumbnail?.[0]?.url ||
+            '',
+        }))
+        .filter(
+          (album: {
+            id: string;
+            name: string;
+            thumbnail: string;
+          }) =>
+            album.id &&
+            album.name &&
+            album.thumbnail
+        );
+
+    } catch (error) {
+      console.warn(
+        '[YouTubeService] Error obteniendo álbumes del artista:',
+        error
+      );
+
+      return [];
+    }
+  }
+
+  public async getArtistDetails(
+    artistId: string,
+    artistName: string,
+    artistThumbnail: string
+  ): Promise<{
+    artist: {
+      id: string;
+      name: string;
+      thumbnail: string;
+    };
+    topSongs: TrackItem[];
+    albums: {
+      id: string;
+      name: string;
+      thumbnail: string;
+    }[];
+    singles: {
+      id: string;
+      name: string;
+      thumbnail: string;
+    }[];
+  }> {
+    try {
+      await this.init();
+
+      if (!this.innertube?.music) {
+        return {
+          artist: {
+            id: artistId,
+            name: artistName,
+            thumbnail: artistThumbnail,
+          },
+          topSongs: [],
+          albums: [],
+          singles: [],
+        };
+      }
+
+      const artistPage =
+        await this.innertube.music.getArtist(
+          artistId
+        );
+
+      const sections =
+        artistPage?.sections || [];
+
+      /*
+ * TOP SONGS
+ */
+      const topSongsSection =
+        sections.find(
+          (section: any) =>
+            section?.type === 'MusicShelf' &&
+            section?.title?.text === 'Top songs'
+        );
+
+      const topSongs: TrackItem[] = [];
+
+      const addTopSongs = (items: any[]) => {
+        for (const song of items) {
+          if (topSongs.length >= 10) {
+            break;
+          }
+
+          const videoId =
+            song?.id ||
+            song?.video_id ||
+            '';
+
+          const title =
+            song?.title?.text ||
+            song?.title?.toString?.() ||
+            'Sin título';
+
+          const artists =
+            song?.artists
+              ?.map((artist: any) => artist?.name)
+              .filter(Boolean) || [];
+
+          const songArtist =
+            artists.join(' & ') ||
+            artistName;
+
+          const duration =
+            song?.duration?.seconds ||
+            0;
+
+          if (!videoId) {
+            continue;
+          }
+
+          if (
+            this.isLikelyNonOfficial(
+              title,
+              songArtist
+            )
+          ) {
+            continue;
+          }
+
+          if (
+            topSongs.some(
+              (track: TrackItem) => track.id === videoId
+            )
+          ) {
+            continue;
+          }
+
+          topSongs.push({
+            id: videoId,
+            title,
+            artist: songArtist,
+            artwork:
+              song?.thumbnail?.[0]?.url ||
+              `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+            duration,
+          });
+        }
+      };
+
+      addTopSongs(
+        topSongsSection?.contents || []
+      );
+
+      if (
+        topSongs.length < 10 &&
+        topSongsSection?.endpoint?.payload?.browseId
+      ) {
+        try {
+          const playlist =
+            await this.innertube.music.getPlaylist(
+              topSongsSection.endpoint.payload.browseId
+            );
+
+          addTopSongs(
+            playlist?.items || []
+          );
+        } catch (error) {
+          console.warn(
+            '[YouTubeService] Error obteniendo playlist de Top Songs:',
+            error
+          );
+        }
+      }
+
+      console.log(
+        '[TOP SONGS] CANCIONES INICIALES:',
+        topSongs.length
+      );
+
+      console.log(
+        '[TOP SONGS] CONTINUATION:',
+        !!topSongsSection?.continuation
+      );
+
+      console.log(
+        '[TOP SONGS] KEYS:',
+        Object.keys(topSongsSection || {})
+      );
+
+      console.log(
+        '[TOP SONGS] BOTTOM BUTTON:',
+        topSongsSection?.bottom_button
+      );
+
+      console.log(
+        '[TOP SONGS] ENDPOINT:',
+        topSongsSection?.endpoint
+      );
+
+      console.log(
+        '[TOP SONGS] PLAYLIST ID:',
+        topSongsSection?.endpoint?.payload?.browseId
+      );
+
+      if (
+        topSongs.length < 10 &&
+        topSongsSection?.continuation
+      ) {
+        try {
+          const continuation =
+            await topSongsSection.getContinuation();
+
+          addTopSongs(
+            continuation?.contents || []
+          );
+        } catch (error) {
+          console.warn(
+            '[YouTubeService] Error obteniendo más Top Songs:',
+            error
+          );
+        }
+      }
+
+      /*
+       * ÁLBUMES
+       */
+      const albumsSection =
+        sections.find(
+          (section: any) =>
+            section?.type === 'MusicCarouselShelf' &&
+            section?.header?.title?.text === 'Albums'
+        );
+
+      const albums =
+        (albumsSection?.contents || [])
+          .filter(
+            (item: any) =>
+              item?.item_type === 'album'
+          )
+          .map((item: any) => ({
+            id:
+              item?.endpoint?.payload?.browseId ||
+              item?.id ||
+              '',
+
+            name:
+              item?.title?.text ||
+              '',
+
+            thumbnail:
+              item?.thumbnail?.[0]?.url ||
+              '',
+          }))
+          .filter(
+            (album: {
+              id: string;
+              name: string;
+              thumbnail: string;
+            }) =>
+              album.id &&
+              album.name &&
+              album.thumbnail
+          );
+
+      /*
+       * SINGLES & EPS
+       */
+      const singlesSection =
+        sections.find(
+          (section: any) =>
+            section?.type === 'MusicCarouselShelf' &&
+            section?.header?.title?.text === 'Singles & EPs'
+        );
+
+      const singles =
+        (singlesSection?.contents || [])
+          .filter(
+            (item: any) =>
+              item?.item_type === 'album'
+          )
+          .map((item: any) => ({
+            id:
+              item?.endpoint?.payload?.browseId ||
+              item?.id ||
+              '',
+
+            name:
+              item?.title?.text ||
+              '',
+
+            thumbnail:
+              item?.thumbnail?.[0]?.url ||
+              '',
+          }))
+          .filter(
+            (single: {
+              id: string;
+              name: string;
+              thumbnail: string;
+            }) =>
+              single.id &&
+              single.name &&
+              single.thumbnail
+          );
+
+      return {
+        artist: {
+          id: artistId,
+          name: artistName,
+          thumbnail: artistThumbnail,
+        },
+        topSongs,
+        albums,
+        singles,
+      };
+
+    } catch (error) {
+      console.warn(
+        '[YouTubeService] Error obteniendo detalles del artista:',
+        error
+      );
+
+      return {
+        artist: {
+          id: artistId,
+          name: artistName,
+          thumbnail: artistThumbnail,
+        },
+        topSongs: [],
+        albums: [],
+        singles: [],
+      };
+    }
   }
 
   public async searchArtistTracks(
@@ -1151,6 +1588,17 @@ class YouTubeService {
   ): Promise<TrackItem[]> {
     try {
       await this.init();
+
+      const artistDetails = await this.getArtistDetails(
+        artistId,
+        'Quevedo',
+        ''
+      );
+
+      console.log(
+        '[TEST] ARTIST DETAILS:',
+        artistDetails
+      );
 
       if (!this.innertube) {
         return [];
@@ -1260,24 +1708,9 @@ class YouTubeService {
           continue;
         }
 
-        if (
-          this.isLikelyNonOfficial(
-            title,
-            artist
-          )
-        ) {
-          continue;
-        }
-
-        tracks.push({
-          id: videoId,
-          title,
-          artist,
-          artwork:
-            `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-          duration,
-        });
       }
+
+
 
       return tracks.slice(0, 20);
     } catch (error) {
