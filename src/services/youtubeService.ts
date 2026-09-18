@@ -3,6 +3,7 @@
 // @ts-ignore
 import * as YouTubeJSModule from 'youtubei.js/bundle/react-native';
 import { TrackItem } from '../types/track';
+import { ArtistItem } from '../types/artist';
 
 const YouTubeJS = YouTubeJSModule as any;
 const InnertubeClass = YouTubeJS.Innertube || YouTubeJS.default?.Innertube || YouTubeJS.default;
@@ -600,9 +601,386 @@ class YouTubeService {
 
     return 0;
   }
+
+  public async testGeneralSearch(
+    query: string
+  ): Promise<'artist' | 'song' | null> {
+    try {
+      await this.init();
+
+      if (!this.innertube?.music?.search) {
+        console.log('[TEST] music.search no disponible');
+        return null;
+      }
+
+      const results = await this.innertube.music.search(query);
+      const contents = results?.contents || [];
+
+      console.log('');
+      console.log('========== TEST GENERAL ==========');
+      console.log('[TEST] QUERY:', query);
+
+      for (const item of contents) {
+        if (!item) continue;
+
+        console.log('[TEST] SHELF:', item.type);
+
+        if (item.type !== 'MusicCardShelf') {
+          continue;
+        }
+
+        const title =
+          item?.title?.text || 'SIN TÍTULO';
+
+        const endpoint =
+          item?.title?.runs?.[0]?.endpoint;
+
+        const endpointName =
+          endpoint?.name || 'SIN ENDPOINT';
+
+        const pageType =
+          endpoint?.payload
+            ?.browseEndpointContextSupportedConfigs
+            ?.browseEndpointContextMusicConfig
+            ?.pageType || 'SIN PAGE TYPE';
+
+        const subtitle =
+          item?.subtitle?.text || 'SIN SUBTÍTULO';
+
+        console.log('[TEST] TÍTULO:', title);
+        console.log('[TEST] SUBTÍTULO:', subtitle);
+        console.log('[TEST] ENDPOINT:', endpointName);
+        console.log('[TEST] PAGE TYPE:', pageType);
+
+        if (pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
+          console.log('[TEST] RESULTADO FINAL: artist');
+          return 'artist';
+        }
+
+        if (endpointName === 'watchEndpoint') {
+          console.log('[TEST] RESULTADO FINAL: song');
+          return 'song';
+        }
+      }
+
+      console.log('[TEST] RESULTADO FINAL: null');
+      return null;
+    } catch (error) {
+      console.error('[TEST] Error:', error);
+      return null;
+    }
+  }
+
+  public async detectSearchType(
+    query: string
+  ): Promise<'artist' | 'song' | null> {
+    try {
+      await this.init();
+
+      if (!this.innertube?.music?.search) {
+        return null;
+      }
+
+      const results = await this.innertube.music.search(query);
+      const contents = results?.contents || [];
+
+      for (const item of contents) {
+        if (item?.type !== 'MusicCardShelf') {
+          continue;
+        }
+
+        const pageType =
+          item?.title?.runs?.[0]?.endpoint?.payload
+            ?.browseEndpointContextSupportedConfigs
+            ?.browseEndpointContextMusicConfig
+            ?.pageType;
+
+        if (pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
+          return 'artist';
+        }
+
+        const endpointName =
+          item?.title?.runs?.[0]?.endpoint?.name;
+
+        if (endpointName === 'watchEndpoint') {
+          return 'song';
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(
+        '[YouTubeService] Error detectando tipo de búsqueda:',
+        error
+      );
+
+      return null;
+    }
+  }
+
+  public async searchArtist(query: string): Promise<ArtistItem | null> {
+    try {
+      await this.init();
+
+      if (!this.innertube?.music?.search) {
+        return null;
+      }
+
+      const results = await this.innertube.music.search(query, {
+        type: 'artist',
+      });
+
+      const contents = results?.contents || [];
+
+      let artistItem: any = null;
+
+      for (const section of contents) {
+        if (section?.type !== 'MusicShelf') {
+          continue;
+        }
+
+        const items = section?.contents || [];
+
+        for (const item of items) {
+          if (item?.item_type === 'artist') {
+            artistItem = item;
+            break;
+          }
+        }
+
+        if (artistItem) {
+          break;
+        }
+      }
+
+      if (!artistItem) {
+        return null;
+      }
+
+      const id =
+        artistItem?.endpoint?.payload?.browseId ||
+        '';
+
+      const name =
+        artistItem?.flex_columns?.[0]?.title?.text ||
+        '';
+
+      const thumbnail =
+        artistItem?.thumbnail?.contents?.[0]?.url ||
+        '';
+
+      if (!id || !name) {
+        return null;
+      }
+
+      return {
+        id,
+        name,
+        thumbnail,
+      };
+    } catch (error) {
+      console.warn(
+        '[YouTubeService] Error buscando artista:',
+        error
+      );
+
+      return null;
+    }
+
+
+
+  }
+
+  public async searchArtistTracks(
+    artistId: string
+  ): Promise<TrackItem[]> {
+    try {
+      await this.init();
+
+      if (!this.innertube) {
+        return [];
+      }
+
+      const artistPage = await this.innertube.music.getArtist(
+        artistId
+      );
+
+      const firstSection = artistPage?.sections?.[0];
+
+      const playlistId =
+        firstSection?.endpoint?.payload?.browseId;
+
+      console.log(
+        '[TEST] ARTIST SONGS PLAYLIST ID:',
+        playlistId
+      );
+
+      if (playlistId) {
+        try {
+          const playlist =
+            await this.innertube.music.getPlaylist(
+              playlistId
+            );
+
+          console.log(
+            '[TEST] PLAYLIST ITEMS:',
+            playlist?.items?.length
+          );
+
+          console.log(
+            '[TEST] PLAYLIST SONGS:',
+            playlist?.items?.map((item: any) => ({
+              type: item?.type,
+              id: item?.id,
+              title: item?.title?.text || item?.title,
+            }))
+          );
+        } catch (error) {
+          console.warn(
+            '[TEST] ERROR PLAYLIST:',
+            error
+          );
+        }
+      }
+
+      console.log(
+        '[TEST] FIRST SECTION ENDPOINT:',
+        firstSection?.endpoint
+      );
+
+      console.log(
+        '[TEST] CONTINUATION TOKEN:',
+        firstSection?.continuation
+      );
+
+      console.log(
+        '[TEST] FIRST SECTION KEYS:',
+        Object.keys(firstSection || {})
+      );
+
+      console.log(
+        '[TEST] FIRST MUSIC SHELF:',
+        firstSection?.contents?.map((item: any) => ({
+          type: item?.type,
+          itemType: item?.item_type,
+          id: item?.id,
+          title: item?.title?.text || item?.title,
+        }))
+      );
+
+      console.log(
+        '[TEST] ARTIST SECTIONS:',
+        artistPage?.sections?.map((section: any) => ({
+          type: section?.type,
+          title: section?.header?.title?.text,
+          contents: section?.contents?.length,
+        }))
+      );
+
+
+
+      let songs =
+        firstSection?.contents || [];
+
+      if (playlistId) {
+        try {
+          const playlist =
+            await this.innertube.music.getPlaylist(
+              playlistId
+            );
+
+          if (playlist?.items?.length) {
+            songs = playlist.items;
+          }
+        } catch (error) {
+          console.warn(
+            '[YouTubeService] Error obteniendo canciones completas del artista:',
+            error
+          );
+        }
+      }
+
+      if (firstSection?.continuation) {
+        try {
+          const continuation =
+            await firstSection.getContinuation();
+
+          songs = [
+            ...songs,
+            ...(continuation?.contents || []),
+          ];
+        } catch (error) {
+          console.warn(
+            '[YouTubeService] Error obteniendo más canciones del artista:',
+            error
+          );
+        }
+      }
+
+      const tracks: TrackItem[] = [];
+
+      for (const song of songs) {
+        const videoId =
+          song?.id ||
+          song?.video_id ||
+          '';
+
+        const title =
+          song?.title?.toString?.() ||
+          song?.title?.text ||
+          'Sin título';
+
+        const artists =
+          song?.artists
+            ?.map((artist: any) => artist.name)
+            .filter(Boolean) || [];
+
+        const artist =
+          artists.join(' & ') ||
+          'Artista desconocido';
+
+        const duration =
+          song?.duration?.seconds ||
+          0;
+
+        if (!videoId) {
+          continue;
+        }
+
+        if (
+          this.isLikelyNonOfficial(
+            title,
+            artist
+          )
+        ) {
+          continue;
+        }
+
+        tracks.push({
+          id: videoId,
+          title,
+          artist,
+          artwork:
+            `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+          duration,
+        });
+      }
+
+      return tracks.slice(0, 20);
+    } catch (error) {
+      console.warn(
+        '[YouTubeService] Error obteniendo canciones del artista:',
+        error
+      );
+
+      return [];
+    }
+  }
+
 }
 
 export const youtubeService = YouTubeService.getInstance();
+
 export const searchTracks = (query: string) =>
   youtubeService.searchTracks(query);
 

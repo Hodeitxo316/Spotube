@@ -16,13 +16,17 @@ import {
 import { youtubeService } from '../services/youtubeService';
 import { playTrack } from '../services/playTrack';
 import { TrackItem } from '../types/track';
+import { ArtistItem } from '../types/artist';
 
 export const SearchScreen = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TrackItem[]>([]);
+  const [artist, setArtist] = useState<ArtistItem | null>(null);
   const [loading, setLoading] = useState(false);
+  const [artistLoading, setArtistLoading] = useState(false);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [featuredImageError, setFeaturedImageError] = useState(false);
+  const [searchType, setSearchType] = useState<'song' | 'artist' | null>(null);
 
   // =========================================================
   // BÚSQUEDA
@@ -31,28 +35,71 @@ export const SearchScreen = () => {
   useEffect(() => {
     if (!query || query.trim().length < 2) {
       setResults([]);
+      setArtist(null);
       setLoading(false);
+      setArtistLoading(false);
       return;
     }
 
     let cancelled = false;
 
     setLoading(true);
+    setArtistLoading(true);
+    setArtist(null);
+    setSearchType(null);
 
     const timer = setTimeout(async () => {
       try {
-        const data = await youtubeService.searchTracks(query);
+        const [tracks, artistData] = await Promise.all([
+          youtubeService.searchTracks(query),
+          youtubeService.searchArtist(query).catch(() => null),
+        ]);
+
+        let artistTracks: TrackItem[] = [];
+
+        if (artistData) {
+          artistTracks = await youtubeService.searchArtistTracks(
+            artistData.id
+          );
+
+          console.log(
+            '[TEST] CANCIONES DEL ARTISTA:',
+            artistData.name,
+            '→',
+            artistTracks.map(track => track.title)
+          );
+        }
+
+        const type = await youtubeService.testGeneralSearch(query);
 
         if (!cancelled) {
-          setResults(data);
+          console.log(
+            '[SearchScreen] Tipo de búsqueda:',
+            query,
+            '→',
+            type
+          );
+
+          setResults(
+            type === 'artist'
+              ? artistTracks
+              : tracks
+          );
+
+          setArtist(artistData);
+          setSearchType(type);
         }
+
       } catch (err) {
         if (!cancelled) {
           console.error('[SearchScreen] Error al buscar:', err);
+          setResults([]);
+          setArtist(null);
         }
       } finally {
         if (!cancelled) {
           setLoading(false);
+          setArtistLoading(false);
         }
       }
     }, 350);
@@ -70,6 +117,36 @@ export const SearchScreen = () => {
   useEffect(() => {
     setFeaturedImageError(false);
   }, [results]);
+  const getSearchType = (
+    searchQuery: string,
+    tracks: TrackItem[],
+    artistData: ArtistItem | null
+  ): 'song' | 'artist' | null => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    const exactArtist =
+      artistData &&
+      artistData.name.trim().toLowerCase() === normalizedQuery;
+
+    const exactSong = tracks.some(
+      (track) =>
+        track.title.trim().toLowerCase() === normalizedQuery
+    );
+
+    // Si el nombre coincide exactamente con un artista,
+    // damos prioridad al artista.
+    if (exactArtist) {
+      return 'artist';
+    }
+
+    // Si no hay artista exacto pero sí una canción exacta,
+    // mostramos la canción como protagonista.
+    if (exactSong) {
+      return 'song';
+    }
+
+    return null;
+  };
 
   // =========================================================
   // REPRODUCCIÓN
@@ -95,8 +172,10 @@ export const SearchScreen = () => {
   // =========================================================
 
   const mainResult = results.length > 0 ? results[0] : null;
-  const songResults = results.slice(1);
 
+  const songResults = artist
+    ? results
+    : results.slice(1);
 
   // =========================================================
   // ITEM DE CANCIÓN
@@ -105,6 +184,10 @@ export const SearchScreen = () => {
   const renderItem = useCallback(
     ({ item, index }: { item: TrackItem; index: number }) => {
       const isLoadingThis = loadingTrackId === item.id;
+
+      const number = artist
+        ? index + 1
+        : index + 2;
 
       return (
         <TouchableOpacity
@@ -115,7 +198,7 @@ export const SearchScreen = () => {
           {/* NÚMERO */}
           <View style={styles.songNumberContainer}>
             <Text style={styles.songNumber}>
-              {String(index + 2).padStart(2, '0')}
+              {String(number).padStart(2, '0')}
             </Text>
           </View>
 
@@ -152,7 +235,7 @@ export const SearchScreen = () => {
         </TouchableOpacity>
       );
     },
-    [loadingTrackId]
+    [loadingTrackId, artist]
   );
 
   // =========================================================
@@ -161,12 +244,10 @@ export const SearchScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-      />
+      <StatusBar barStyle="light-content" />
 
       <FlatList
-        data={songResults}
+        data={artistLoading ? [] : songResults}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
@@ -207,7 +288,10 @@ export const SearchScreen = () => {
                 placeholder="Canciones, artistas..."
                 placeholderTextColor="#70727A"
                 value={query}
-                onChangeText={setQuery}
+                onChangeText={(text) => {
+                  setQuery(text);
+                  setArtist(null);
+                }}
                 autoCapitalize="none"
                 autoCorrect={false}
                 selectionColor="#FF5500"
@@ -216,7 +300,10 @@ export const SearchScreen = () => {
               {query.length > 0 && (
                 <TouchableOpacity
                   style={styles.clearButton}
-                  onPress={() => setQuery('')}
+                  onPress={() => {
+                    setQuery('');
+                    setArtist(null);
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.clearText}>×</Text>
@@ -228,7 +315,7 @@ export const SearchScreen = () => {
                 LOADING
             ===================================================== */}
 
-            {loading && (
+            {(loading || artistLoading) && (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator
                   color="#FF5500"
@@ -242,10 +329,44 @@ export const SearchScreen = () => {
             )}
 
             {/* =====================================================
+                ARTISTA
+            ===================================================== */}
+
+            {artist && searchType === 'artist' && !artistLoading && (
+              <TouchableOpacity
+                style={styles.artistCard}
+                activeOpacity={0.88}
+              >
+                <Image
+                  source={{ uri: artist.thumbnail }}
+                  style={styles.artistImage}
+                  resizeMode="cover"
+                />
+
+                <View style={styles.artistInfo}>
+                  <Text style={styles.artistLabel}>
+                    ARTISTA
+                  </Text>
+
+                  <Text
+                    style={styles.artistName}
+                    numberOfLines={1}
+                  >
+                    {artist.name}
+                  </Text>
+                </View>
+
+                <View style={styles.artistArrow}>
+                  <Text style={styles.artistArrowText}>›</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* =====================================================
                 RESULTADO PRINCIPAL
             ===================================================== */}
 
-            {mainResult && (
+            {mainResult && searchType === 'song' && !artistLoading && (
               <View style={styles.mainSection}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionEyebrow}>
@@ -336,7 +457,7 @@ export const SearchScreen = () => {
                 CANCIONES
             ===================================================== */}
 
-            {songResults.length > 0 && (
+            {songResults.length > 0 && !artistLoading && (
               <View style={styles.songsSection}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>
@@ -712,5 +833,57 @@ const styles = StyleSheet.create({
   songLoader: {
     width: 35,
   },
-});
 
+  // ARTIST
+  artistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#191B22',
+    borderRadius: 18,
+    padding: 12,
+    marginTop: 18,
+    marginBottom: 4,
+  },
+
+  artistImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+
+  artistInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+
+  artistLabel: {
+    color: '#FF5500',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+
+  artistName: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+
+  artistArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#252832',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+  },
+
+  artistArrowText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '300',
+    marginTop: -3,
+  },
+});
