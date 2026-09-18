@@ -42,12 +42,12 @@ class YouTubeService {
   private static instance: YouTubeService;
   private innertube: any = null;
   private initPromise: Promise<void> | null = null;
-  
+
   // Caché en memoria para enlaces de streaming (1 hora de validez)
   private streamCache = new Map<string, StreamCacheEntry>();
   private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hora
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): YouTubeService {
     if (!YouTubeService.instance) {
@@ -128,8 +128,7 @@ class YouTubeService {
           const artist = video.ownerText?.runs?.[0]?.text || 'Artista desconocido';
           const durationText = video.lengthText?.simpleText || '0:00';
           const artwork =
-            video.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
-            `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+            `https://i.ytimg.com/vi/${video.videoId}/maxresdefault.jpg`;
 
           parsed.push({
             id: video.videoId,
@@ -171,7 +170,7 @@ class YouTubeService {
             }));
           }
         }
-      } catch {}
+      } catch { }
     }
     return [];
   }
@@ -189,7 +188,7 @@ class YouTubeService {
     // 2. Intentar con Innertube
     try {
       await this.init();
-    } catch {}
+    } catch { }
 
     const clientsToTry: Array<'ANDROID' | 'YTMUSIC' | 'WEB' | 'IOS'> = [
       'ANDROID',
@@ -226,7 +225,7 @@ class YouTubeService {
             return fallbackFormat.url;
           }
         }
-      } catch {}
+      } catch { }
     }
 
     // 3. Fallback a servidores Piped con timeouts ajustados
@@ -244,7 +243,7 @@ class YouTubeService {
             return bestAudio.url;
           }
         }
-      } catch {}
+      } catch { }
     }
 
     throw new Error(`La canción (${videoId}) no está disponible.`);
