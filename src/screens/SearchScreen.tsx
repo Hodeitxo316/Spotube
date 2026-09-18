@@ -35,20 +35,32 @@ export const SearchScreen = () => {
       return;
     }
 
+    let cancelled = false;
+
     setLoading(true);
 
     const timer = setTimeout(async () => {
       try {
         const data = await youtubeService.searchTracks(query);
-        setResults(data);
+
+        if (!cancelled) {
+          setResults(data);
+        }
       } catch (err) {
-        console.error('[SearchScreen] Error al buscar:', err);
+        if (!cancelled) {
+          console.error('[SearchScreen] Error al buscar:', err);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   // =========================================================
@@ -84,6 +96,7 @@ export const SearchScreen = () => {
 
   const mainResult = results.length > 0 ? results[0] : null;
   const songResults = results.slice(1);
+
 
   // =========================================================
   // ITEM DE CANCIÓN

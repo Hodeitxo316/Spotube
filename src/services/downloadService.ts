@@ -217,7 +217,7 @@ export const triggerBackgroundDownload = (track: TrackItem, streamUrl: string): 
   queueManager.enqueue(track, streamUrl);
 };
 
-export const cancelActiveDownload = (): void => {};
+export const cancelActiveDownload = (): void => { };
 
 export const getAudioUrlForPlayback = async (
   track: TrackItem
@@ -229,6 +229,13 @@ export const getAudioUrlForPlayback = async (
     return { url: `file://${localPath}`, isLocal: true };
   }
 
+  const startTime = Date.now();
+
   const remoteUrl = await youtubeService.getAudioStreamUrl(track.id);
+
+  console.log(
+    `[Playback] ⏱️ URL de audio obtenida en ${Date.now() - startTime} ms`
+  );
+
   return { url: remoteUrl, isLocal: false };
 };

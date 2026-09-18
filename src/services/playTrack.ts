@@ -70,6 +70,8 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
       throw new Error('No se pudo obtener una URL de reproducción válida.');
     }
 
+    const playerStartTime = Date.now();
+
     await setupAudioPlayer();
     await TrackPlayer.reset();
 
@@ -92,6 +94,8 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
 
     await TrackPlayer.add(trackPayload);
     await TrackPlayer.play();
+
+    console.log(`[Playback] ⏱️ TrackPlayer tardó ${Date.now() - playerStartTime} ms`);
 
     console.log(
       `[playTrack] 🎵 Reproduciendo: ${track.title} (${isLocal ? 'OFFLINE' : 'STREAMING'
