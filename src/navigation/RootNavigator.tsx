@@ -3,14 +3,16 @@ import React, { useState } from 'react';
 import { View, Modal, StyleSheet, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SearchScreen } from '../screens/SearchScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
+import { AlbumScreen } from '../screens/AlbumScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { COLORS } from '../constants/theme';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 const TabNavigator = () => (
   <Tab.Navigator
@@ -51,7 +53,21 @@ export const RootNavigator = () => {
   return (
     <NavigationContainer>
       <View style={styles.wrapper}>
-        <TabNavigator />
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Stack.Screen
+            name="Main"
+            component={TabNavigator}
+          />
+
+          <Stack.Screen
+            name="Album"
+            component={AlbumScreen}
+          />
+        </Stack.Navigator>
 
         {/* MiniPlayer flotante persistente sobre los tabs */}
         <MiniPlayer onPressExpand={() => setPlayerModalVisible(true)} />

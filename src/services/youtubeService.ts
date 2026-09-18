@@ -612,6 +612,13 @@ class YouTubeService {
       artistThumbnail: string;
     }
     | {
+      type: 'album';
+      albumId: string;
+      albumName: string;
+      albumThumbnail: string;
+      artistName: string;
+    }
+    | {
       type: 'song';
     }
     | null
@@ -678,6 +685,34 @@ class YouTubeService {
           item?.thumbnail
         );
 
+        if (pageType === 'MUSIC_PAGE_TYPE_ALBUM') {
+          const albumId =
+            endpoint?.payload?.browseId || '';
+
+          console.log(
+            '[TEST] RESULTADO FINAL: album'
+          );
+
+          console.log(
+            '[TEST] ALBUM ID:',
+            albumId
+          );
+
+          if (!albumId) {
+            return null;
+          }
+
+          return {
+            type: 'album',
+            albumId,
+            albumName: title,
+            albumThumbnail:
+              item?.thumbnail?.contents?.[0]?.url || '',
+            artistName:
+              item?.subtitle?.text?.replace('Album • ', '') || '',
+          };
+        }
+
         if (pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
 
           console.log(
@@ -725,6 +760,270 @@ class YouTubeService {
     }
   }
 
+  public async testAlbumSearch(
+    query: string
+  ): Promise<boolean> {
+    try {
+      await this.init();
+
+      if (!this.innertube?.music?.search) {
+        console.log('[ALBUM TEST] music.search no disponible');
+        return false;
+      }
+
+      const results = await this.innertube.music.search(query);
+      const contents = results?.contents || [];
+
+      console.log('');
+      console.log('========== TEST ÁLBUM ==========');
+      console.log('[ALBUM TEST] QUERY:', query);
+
+      for (const item of contents) {
+        if (!item) continue;
+
+        if (item.type !== 'MusicCardShelf') {
+          continue;
+        }
+
+        const title =
+          item?.title?.text || 'SIN TÍTULO';
+
+        const endpoint =
+          item?.title?.runs?.[0]?.endpoint;
+
+        const pageType =
+          endpoint?.payload
+            ?.browseEndpointContextSupportedConfigs
+            ?.browseEndpointContextMusicConfig
+            ?.pageType || 'SIN PAGE TYPE';
+
+        const endpointName =
+          endpoint?.name || 'SIN ENDPOINT';
+
+        const subtitle =
+          item?.subtitle?.text || 'SIN SUBTÍTULO';
+
+        console.log('[ALBUM TEST] TÍTULO:', title);
+        console.log('[ALBUM TEST] SUBTÍTULO:', subtitle);
+        console.log('[ALBUM TEST] ENDPOINT:', endpointName);
+        console.log('[ALBUM TEST] PAGE TYPE:', pageType);
+
+        if (
+          pageType === 'MUSIC_PAGE_TYPE_ALBUM'
+        ) {
+          console.log(
+            '[ALBUM TEST] ¡ÁLBUM DETECTADO!'
+          );
+
+          console.log(
+            '[ALBUM TEST] ALBUM ID:',
+            endpoint?.payload?.browseId
+          );
+
+          return true;
+        }
+      }
+
+      console.log(
+        '[ALBUM TEST] No se encontró álbum'
+      );
+
+      return false;
+
+    } catch (error) {
+      console.error(
+        '[ALBUM TEST] Error:',
+        error
+      );
+
+      return false;
+    }
+  }
+
+  public async testAlbumTracks(
+    albumId: string
+  ):
+
+
+
+    Promise<boolean> {
+
+    try {
+      await this.init();
+
+      if (!this.innertube) {
+        console.log('[ALBUM TRACKS TEST] innertube no disponible');
+        return false;
+      }
+
+      console.log('');
+      console.log('========== TEST CANCIONES ÁLBUM ==========');
+      console.log('[ALBUM TRACKS TEST] ALBUM ID:', albumId);
+
+      const album =
+        await this.innertube.music.getAlbum(
+          albumId
+        );
+
+      console.log(
+        '[ALBUM TRACKS TEST] ALBUM OBTENIDO'
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] KEYS:',
+        Object.keys(album || {})
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] SECTIONS:',
+        album?.sections?.length || 0
+      );
+
+      const firstSection =
+        album?.sections?.[0];
+
+      console.log(
+        '[ALBUM TRACKS TEST] FIRST SECTION KEYS:',
+        Object.keys(firstSection || {})
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] SONGS:',
+        firstSection?.contents?.length || 0
+      );
+
+      const firstSong =
+        firstSection?.contents?.[0];
+
+      console.log(
+        '[ALBUM TRACKS TEST] FIRST SONG KEYS:',
+        Object.keys(firstSong || {})
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] FIRST SONG:',
+        {
+          id: firstSong?.id,
+          title: firstSong?.title?.toString?.() || firstSong?.title?.text,
+          artists: firstSong?.artists?.map(
+            (artist: any) => artist.name
+          ),
+          duration: firstSong?.duration?.seconds,
+        }
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] FIRST SONG DURATION:',
+        firstSong?.duration
+      );
+
+      console.log(
+        '[ALBUM TRACKS TEST] FIRST SONG THUMBNAIL:',
+        firstSong?.thumbnail
+      );
+
+      return true;
+
+    } catch (error) {
+      console.error(
+        '[ALBUM TRACKS TEST] ERROR:',
+        error
+      );
+
+      return false;
+    }
+  }
+
+  public async searchAlbumTracks(
+    albumId: string
+  ): Promise<TrackItem[]> {
+    try {
+      await this.init();
+
+      if (!this.innertube) {
+        return [];
+      }
+
+      const album =
+        await this.innertube.music.getAlbum(
+          albumId
+        );
+
+      console.log(
+        '[ALBUM] CONTENTS DIRECTOS:',
+        album?.contents?.length || 0
+      );
+
+      console.log(
+        '[ALBUM] PRIMER CONTENT DIRECTO:',
+        album?.contents?.[0]
+      );
+
+      const contents =
+        album?.contents || [];
+
+      const tracks: TrackItem[] = [];
+
+      for (const item of contents) {
+        const id = item?.id || '';
+
+        const videoId =
+          item?.endpoint?.payload?.videoId ||
+          id;
+
+        const title =
+          item?.title?.text ||
+          item?.title?.toString?.() ||
+          '';
+
+        const artist =
+          item?.artists
+            ?.map((artist: any) => artist?.name)
+            .filter(Boolean)
+            .join(', ') ||
+          item?.flex_columns?.[1]?.title?.text ||
+          item?.author?.name ||
+          'Artista desconocido';
+
+        const artwork =
+          videoId
+            ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+            : '';
+
+        if (!videoId || !title) {
+          continue;
+        }
+
+        tracks.push({
+          id: videoId,
+          title,
+          artist,
+          artwork,
+          duration: 0,
+        });
+      }
+
+      console.log(
+        '[ALBUM] IDS:',
+        tracks.map(track => ({
+          id: track.id,
+          title: track.title,
+        }))
+      );
+
+
+      return tracks;
+
+    } catch (error) {
+      console.error(
+        '[YouTubeService] Error buscando canciones del álbum:',
+        error
+      );
+
+      return [];
+    }
+  }
+
   public async detectSearchType(
     query: string
   ): Promise<'artist' | 'song' | null> {
@@ -748,6 +1047,8 @@ class YouTubeService {
             ?.browseEndpointContextSupportedConfigs
             ?.browseEndpointContextMusicConfig
             ?.pageType;
+
+
 
         if (pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
           return 'artist';

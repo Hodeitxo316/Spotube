@@ -1,5 +1,7 @@
 // src/screens/SearchScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   View,
   Text,
@@ -18,6 +20,20 @@ import { playTrack } from '../services/playTrack';
 import { TrackItem } from '../types/track';
 import { ArtistItem } from '../types/artist';
 
+type RootStackParamList = {
+  Main: undefined;
+  Album: {
+    albumName: string;
+    artistName: string;
+    albumArtwork: string;
+    tracks: TrackItem[];
+  };
+};
+
+type SearchNavigationProp =
+  NativeStackNavigationProp<RootStackParamList>;
+
+
 const searchCache = new Map<
   string,
   {
@@ -35,9 +51,20 @@ export const SearchScreen = () => {
   const [artistLoading, setArtistLoading] = useState(false);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [featuredImageError, setFeaturedImageError] = useState(false);
-  const [searchType, setSearchType] = useState<'song' | 'artist' | null>(null);
+  const [searchType, setSearchType] = useState<
+    'song' | 'artist' | 'album' | null
+  >(null);
 
-   // =========================================================
+  const [album, setAlbum] = useState<{
+    id: string;
+    name: string;
+    artistName: string;
+    thumbnail: string;
+  } | null>(null);
+
+  const navigation = useNavigation<SearchNavigationProp>();
+
+  // =========================================================
   // BÚSQUEDA
   // =========================================================
 
@@ -62,6 +89,7 @@ export const SearchScreen = () => {
     if (!query || normalizedQuery.length < 3) {
       setResults([]);
       setArtist(null);
+      setAlbum(null);
       setLoading(false);
       setArtistLoading(false);
       return;
@@ -73,6 +101,7 @@ export const SearchScreen = () => {
     setArtistLoading(true);
     setArtist(null);
     setSearchType(null);
+    setAlbum(null);
 
     const timer = setTimeout(async () => {
 
@@ -152,7 +181,30 @@ export const SearchScreen = () => {
             '→',
             artistTracks.map(track => track.title)
           );
+
+        } else if (type?.type === 'album') {
+
+          setAlbum({
+            id: type.albumId,
+            name: type.albumName,
+            artistName: type.artistName,
+            thumbnail: type.albumThumbnail,
+          });
+
+          tracks =
+            await youtubeService.searchAlbumTracks(
+              type.albumId
+            );
+
+          console.log(
+            '[TEST] CANCIONES DEL ÁLBUM:',
+            type.albumName,
+            '→',
+            tracks.map(track => track.title)
+          );
+
         } else if (type?.type === 'song') {
+
           tracks =
             await youtubeService.searchTracks(
               normalizedQuery
@@ -358,7 +410,7 @@ export const SearchScreen = () => {
 
       <FlatList
         data={artistLoading ? [] : songResults}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
@@ -472,6 +524,85 @@ export const SearchScreen = () => {
               </TouchableOpacity>
             )}
 
+            {album && searchType === 'album' && !artistLoading && (
+              <View style={styles.mainSection}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionEyebrow}>
+                    ÁLBUM
+                  </Text>
+
+                  <View style={styles.sectionLine} />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.featuredCard}
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    navigation.navigate('Album', {
+                      albumName: album.name,
+                      artistName: album.artistName,
+                      albumArtwork: album.thumbnail,
+                      tracks: results,
+                    })
+                  }
+                >
+                  {/* IMAGEN */}
+                  <View style={styles.featuredImageWrapper}>
+                    <Image
+                      source={{ uri: album.thumbnail }}
+                      style={styles.featuredArtwork}
+                      resizeMode="cover"
+                    />
+
+                    <View style={styles.imageOverlay} />
+
+                    <View style={styles.featuredBadge}>
+                      <Text style={styles.featuredBadgeText}>
+                        AL
+                      </Text>
+                    </View>
+
+                    <View style={styles.featuredPlayButton}>
+                      <Text style={styles.featuredPlayIcon}>
+                        ▶
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* INFORMACIÓN */}
+                  <View style={styles.featuredInfo}>
+                    <Text
+                      style={styles.featuredTitle}
+                      numberOfLines={2}
+                    >
+                      {album.name}
+                    </Text>
+
+                    <Text
+                      style={styles.featuredArtist}
+                      numberOfLines={1}
+                    >
+                      {results[0]?.artist || 'Artista desconocido'}
+                    </Text>
+
+                    <View style={styles.featuredBottom}>
+                      <View style={styles.featuredTag}>
+                        <View style={styles.featuredTagDot} />
+
+                        <Text style={styles.featuredTagText}>
+                          ÁLBUM
+                        </Text>
+                      </View>
+
+                      <Text style={styles.featuredAction}>
+                        VER ÁLBUM
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* =====================================================
                 RESULTADO PRINCIPAL
             ===================================================== */}
@@ -562,6 +693,8 @@ export const SearchScreen = () => {
                 </TouchableOpacity>
               </View>
             )}
+
+
 
             {/* =====================================================
                 CANCIONES
