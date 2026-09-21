@@ -1,4 +1,7 @@
-import React from 'react';
+import React, {
+    useEffect,
+    useRef,
+} from 'react';
 import {
     RouteProp,
     useRoute,
@@ -12,6 +15,8 @@ import {
     TouchableOpacity,
     StyleSheet,
     SafeAreaView,
+    Animated,
+    Easing,
 } from 'react-native';
 
 import { TrackItem } from '../types/track';
@@ -30,11 +35,134 @@ type AlbumRouteProp =
     RouteProp<AlbumRouteParams, 'Album'>;
 
 export const AlbumScreen = () => {
+
     const route =
         useRoute<AlbumRouteProp>();
 
     const navigation =
         useNavigation();
+
+    const albumScale = useRef(
+        new Animated.Value(1)
+    ).current;
+
+    const albumTranslateX = useRef(
+        new Animated.Value(0)
+    ).current;
+
+    const albumTranslateY = useRef(
+        new Animated.Value(0)
+    ).current;
+
+    useEffect(() => {
+        const animation = Animated.loop(
+            Animated.sequence([
+
+                Animated.parallel([
+                    Animated.timing(albumScale, {
+                        toValue: 1.035,
+                        duration: 7000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateX, {
+                        toValue: 7,
+                        duration: 7000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateY, {
+                        toValue: -4,
+                        duration: 7000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+                ]),
+
+                Animated.parallel([
+                    Animated.timing(albumScale, {
+                        toValue: 1.02,
+                        duration: 6000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateX, {
+                        toValue: -6,
+                        duration: 6000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateY, {
+                        toValue: 5,
+                        duration: 6000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+                ]),
+
+                Animated.parallel([
+                    Animated.timing(albumScale, {
+                        toValue: 1.04,
+                        duration: 6500,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateX, {
+                        toValue: 4,
+                        duration: 6500,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateY, {
+                        toValue: -3,
+                        duration: 6500,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+                ]),
+
+                Animated.parallel([
+                    Animated.timing(albumScale, {
+                        toValue: 1,
+                        duration: 8000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateX, {
+                        toValue: 0,
+                        duration: 8000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+
+                    Animated.timing(albumTranslateY, {
+                        toValue: 0,
+                        duration: 8000,
+                        easing: Easing.inOut(Easing.sin),
+                        useNativeDriver: true,
+                    }),
+                ]),
+
+            ])
+        );
+
+        animation.start();
+
+        return () => {
+            animation.stop();
+        };
+    }, [
+        albumScale,
+        albumTranslateX,
+        albumTranslateY,
+    ]);
 
     const {
         albumName,
@@ -64,15 +192,32 @@ export const AlbumScreen = () => {
 
                         <View style={styles.albumHero}>
 
-                            <Image
-                                source={{
-                                    uri: albumArtwork,
-                                }}
-                                style={
-                                    styles.albumHeroArtwork
-                                }
-                                resizeMode="cover"
-                            />
+                            <View style={styles.albumArtworkContainer}>
+
+                                <Animated.Image
+                                    source={{
+                                        uri: albumArtwork,
+                                    }}
+                                    style={[
+                                        styles.albumHeroArtwork,
+                                        {
+                                            transform: [
+                                                {
+                                                    scale: albumScale,
+                                                },
+                                                {
+                                                    translateX: albumTranslateX,
+                                                },
+                                                {
+                                                    translateY: albumTranslateY,
+                                                },
+                                            ],
+                                        },
+                                    ]}
+                                    resizeMode="cover"
+                                />
+
+                            </View>
 
                             <View
                                 style={
@@ -97,7 +242,6 @@ export const AlbumScreen = () => {
                             </TouchableOpacity>
 
                         </View>
-
                         <View
                             style={
                                 styles.albumInfoContainer
@@ -482,5 +626,11 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#272931',
         marginLeft: 12,
+    },
+
+    albumArtworkContainer: {
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
     },
 });

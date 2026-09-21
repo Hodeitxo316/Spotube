@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+    useEffect,
+    useState,
+    useRef,
+} from 'react';
 import {
     SafeAreaView,
     View,
@@ -8,6 +12,7 @@ import {
     TouchableOpacity,
     StyleSheet,
     FlatList,
+    Animated,
 } from 'react-native';
 import { youtubeService } from '../services/youtubeService';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -47,6 +52,9 @@ export const ArtistScreen = ({
 
     const [loading, setLoading] = useState(true);
     const [artist, setArtist] = useState<any>(null);
+
+    const albumRef =
+        useRef<View>(null);
 
     useEffect(() => {
         const loadArtist = async () => {
