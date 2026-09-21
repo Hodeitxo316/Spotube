@@ -18,6 +18,10 @@ import {
     Animated,
     Easing,
 } from 'react-native';
+import {
+    setPlayerQueue,
+    prepareNextTrack,
+} from '../services/playerQueue';
 
 import { TrackItem } from '../types/track';
 import { playTrack } from '../services/playTrack';
@@ -172,9 +176,22 @@ export const AlbumScreen = () => {
     } = route.params;
 
     const handlePlayTrack = async (
-        track: TrackItem
+        track: TrackItem,
+        index: number
     ) => {
+        setPlayerQueue(
+            tracks,
+            index
+        );
+
         await playTrack(track);
+
+        prepareNextTrack().catch((error) => {
+            console.warn(
+                '[Queue] No se pudo preparar la siguiente canción:',
+                error
+            );
+        });
     };
 
     return (
@@ -316,7 +333,8 @@ export const AlbumScreen = () => {
                                             0
                                         ) {
                                             handlePlayTrack(
-                                                tracks[0]
+                                                tracks[0],
+                                                0
                                             );
                                         }
                                     }}
@@ -374,7 +392,10 @@ export const AlbumScreen = () => {
                     <TouchableOpacity
                         style={styles.trackRow}
                         onPress={() =>
-                            handlePlayTrack(item)
+                            handlePlayTrack(
+                                item,
+                                index
+                            )
                         }
                         activeOpacity={0.7}
                     >
