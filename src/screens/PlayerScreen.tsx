@@ -7,7 +7,7 @@ import TrackPlayer, {
   useProgress,
 } from 'react-native-track-player';
 import { COLORS } from '../constants/theme';
-import { promoteToPermanentAndSave } from '../services/cacheManager';
+import { saveTrackToLibrary } from '../services/downloadService';
 import { fetchSyncedLyrics } from '../services/lyricsService';
 import { LyricLine } from '../utils/lrcParser';
 import { SyncedLyricsView } from '../components/SyncedLyricsView';
@@ -89,7 +89,7 @@ export const PlayerScreen = () => {
   if (!activeTrack) return null;
 
   const handleSaveTrack = async () => {
-    await promoteToPermanentAndSave({
+    await saveTrackToLibrary({
       id: activeTrack.id,
       title: activeTrack.title || 'Desconocido',
       artist: activeTrack.artist || 'Desconocido',
