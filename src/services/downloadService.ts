@@ -5,6 +5,7 @@ import { TrackItem } from '../types/track';
 import { youtubeService } from './youtubeService';
 import { libraryStorage } from '../storage/libraryStorage';
 import { Track } from '../types/library';
+import { getLocalAudioPath } from './cacheManager';
 
 const { dirs } = RNBlobUtil.fs;
 const MUSIC_DIR = `${dirs.DocumentDir}/music`;
@@ -43,6 +44,7 @@ class DownloadQueueManager {
   private activeTrackId: string | null = null;
 
   public enqueue(track: TrackItem, streamUrl: string) {
+
     isTrackDownloaded(track.id).then((downloaded) => {
       const existingTrack = libraryStorage.getTrack(track.id);
       const finalPath = getLocalFilePath(track.id);
@@ -156,7 +158,7 @@ class DownloadQueueManager {
 
               libraryStorage.saveTrack(trackToSave);
               DeviceEventEmitter.emit('library_updated');
-              console.log(`[Storage] 🎉 Canción guardada sin cortes: "${track.title}"`);
+              console.log(`[Storage] 🎉 Canción guardada: "${track.title}"`);
             } catch (e) {
               console.error('[Storage] Error al mover el archivo final:', e);
             }
@@ -203,8 +205,31 @@ export const saveTrackToLibrary = async (track: TrackItem): Promise<void> => {
       libraryStorage.saveTrack(trackToSave);
       DeviceEventEmitter.emit('library_updated');
     } else {
+      const existingTrack = libraryStorage.getTrack(track.id);
+
+      const trackToSave: Track = {
+        id: track.id,
+        title: track.title,
+        artist: track.artist || (track as any).channelTitle || 'Artista Desconocido',
+        coverUrl: track.artwork || (track as any).coverUrl || (track as any).thumbnail || '',
+        duration: track.duration || 0,
+        isFavorite: existingTrack ? existingTrack.isFavorite : false,
+        downloadState: 'downloading',
+        addedAt: existingTrack ? existingTrack.addedAt : Date.now(),
+      };
+
+      libraryStorage.saveTrack(trackToSave);
+      DeviceEventEmitter.emit('library_updated');
+
       const streamUrl = await youtubeService.getAudioStreamUrl(track.id);
+
+      console.log(
+        '[DOWNLOAD DEBUG] URL obtenida:',
+        streamUrl ? 'SÍ' : 'NO'
+      );
+
       if (streamUrl) {
+        console.log('[DOWNLOAD DEBUG] Enviando a DownloadQueueManager');
         queueManager.enqueue(track, streamUrl);
       }
     }
@@ -222,20 +247,31 @@ export const cancelActiveDownload = (): void => { };
 export const getAudioUrlForPlayback = async (
   track: TrackItem
 ): Promise<{ url: string; isLocal: boolean }> => {
-  const localPath = getLocalFilePath(track.id);
-  const downloaded = await isTrackDownloaded(track.id);
-
-  if (downloaded) {
-    return { url: `file://${localPath}`, isLocal: true };
-  }
-
   const startTime = Date.now();
 
+  // 1. Buscar primero descarga permanente o caché temporal
+  const localPath = await getLocalAudioPath(track.id);
+
+  if (localPath) {
+    console.log(
+      `[Playback] 📦 Usando archivo local para: ${track.title}`
+    );
+
+    return {
+      url: localPath,
+      isLocal: true,
+    };
+  }
+
+  // 2. Si no existe localmente, obtener streaming
   const remoteUrl = await youtubeService.getAudioStreamUrl(track.id);
 
   console.log(
     `[Playback] ⏱️ URL de audio obtenida en ${Date.now() - startTime} ms`
   );
 
-  return { url: remoteUrl, isLocal: false };
+  return {
+    url: remoteUrl,
+    isLocal: false,
+  };
 };

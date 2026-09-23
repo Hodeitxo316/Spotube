@@ -17,6 +17,7 @@ import {
 
 import { youtubeService } from '../services/youtubeService';
 import { playTrack } from '../services/playTrack';
+import { setPlayerQueue } from '../services/playerQueue';
 import { TrackItem } from '../types/track';
 import { ArtistItem } from '../types/artist';
 
@@ -331,10 +332,22 @@ export const SearchScreen = () => {
   // REPRODUCCIÓN
   // =========================================================
 
-  const handleSelectTrack = async (item: TrackItem) => {
+  const handleSelectTrack = async (
+    item: TrackItem,
+    index: number
+  ) => {
     setLoadingTrackId(item.id);
 
     try {
+      const queue = artist
+        ? results
+        : results.slice(1);
+
+      setPlayerQueue(
+        queue,
+        index
+      );
+
       await playTrack(item);
     } catch (err) {
       Alert.alert(
@@ -371,7 +384,7 @@ export const SearchScreen = () => {
       return (
         <TouchableOpacity
           style={styles.songRow}
-          onPress={() => handleSelectTrack(item)}
+          onPress={() => handleSelectTrack(item, index)}
           activeOpacity={0.72}
         >
           {/* NÚMERO */}
@@ -631,7 +644,7 @@ export const SearchScreen = () => {
                 <TouchableOpacity
                   style={styles.featuredCard}
                   activeOpacity={0.9}
-                  onPress={() => handleSelectTrack(mainResult)}
+                  onPress={() => handleSelectTrack(mainResult, 0)}
                 >
                   {/* IMAGEN */}
                   <View style={styles.featuredImageWrapper}>

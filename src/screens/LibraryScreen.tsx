@@ -31,6 +31,7 @@ import { Track, Playlist } from '../types/library';
 import { TrackItem } from '../types/track';
 
 import { playTrack } from '../services/playTrack';
+import { setPlayerQueue } from '../services/playerQueue';
 
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 
@@ -224,6 +225,36 @@ export const LibraryScreen = () => {
   const handlePlayTrack = async (
     track: Track,
   ) => {
+    const currentTracks = getSectionTracks();
+
+    const index = currentTracks.findIndex(
+      (item) => item.id === track.id,
+    );
+
+    setPlayerQueue(
+      currentTracks.map((item) => ({
+        id: item.id,
+        title: item.title,
+        artist: item.artist,
+        artwork: item.coverUrl || 'local',
+        duration: item.duration || 0,
+        streamUrl: item.localPath,
+      })),
+      index,
+    );
+
+    console.log(
+      '[QUEUE DEBUG] Cola:',
+      currentTracks.map((item) => item.title),
+    );
+
+    console.log('[QUEUE DEBUG]', {
+      total: currentTracks.length,
+      index,
+      current: track.title,
+    });
+
+    // EL RESTO DEL CÓDIGO SIGUE IGUAL
     try {
       console.log(
         '🎵 TRACK LOCAL:',
@@ -557,8 +588,8 @@ export const LibraryScreen = () => {
     ) {
       sectionTracks = tracks.filter(
         (track) =>
-          track.downloadState ===
-          'completed' &&
+          (track.downloadState === 'downloading' ||
+            track.downloadState === 'completed') &&
           !track.isLocalFile,
       );
     } else if (section === 'local') {

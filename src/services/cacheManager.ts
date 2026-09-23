@@ -1,11 +1,13 @@
 // src/services/cacheManager.ts
 import ReactNativeBlobUtil from 'react-native-blob-util';
-import { saveTrackToLocalDb } from '../database/trackRepository';
 import { TrackItem } from '../types/track';
+import { libraryStorage } from '../storage/libraryStorage';
+import { Track } from '../types/library';
+import { DeviceEventEmitter } from 'react-native';
 
 const { dirs } = ReactNativeBlobUtil.fs;
 const CACHE_DIR = `${dirs.CacheDir}/audio_cache`;
-const PERMANENT_DIR = `${dirs.DocumentDir}/saved_tracks`;
+const PERMANENT_DIR = `${dirs.DocumentDir}/music`;
 const MIN_FILE_SIZE_BYTES = 500 * 1024; // 500 KB mínimos
 
 const ensureDirectoriesExist = async () => {
@@ -36,6 +38,10 @@ export const getLocalAudioPath = async (trackId: string): Promise<string | null>
   };
 
   const permanentPath = await verifyAndGetPath(`${PERMANENT_DIR}/${trackId}.m4a`);
+
+  console.log('[Cache DEBUG] permanentPath:', `${PERMANENT_DIR}/${trackId}.m4a`);
+  console.log('[Cache DEBUG] existe permanente:', await ReactNativeBlobUtil.fs.exists(`${PERMANENT_DIR}/${trackId}.m4a`));
+
   if (permanentPath) return permanentPath;
 
   const cachePath = await verifyAndGetPath(`${CACHE_DIR}/${trackId}.m4a`);
@@ -77,10 +83,30 @@ export const promoteToPermanentAndSave = async (track: TrackItem): Promise<boole
 
     if (await ReactNativeBlobUtil.fs.exists(cachePath)) {
       await ReactNativeBlobUtil.fs.mv(cachePath, permanentPath);
+
       console.log(`Pista ${track.id} promovida a almacenamiento permanente.`);
+
+      console.log(
+        '[PROMOTE DEBUG] existe permanente después de mv:',
+        await ReactNativeBlobUtil.fs.exists(permanentPath)
+      );
     }
 
-    saveTrackToLocalDb(track);
+    const libraryTrack: Track = {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      coverUrl: track.artwork,
+      duration: track.duration,
+      isFavorite: false,
+      downloadState: 'completed',
+      addedAt: Date.now(),
+      isLocalFile: false,
+    };
+
+    libraryStorage.saveTrack(libraryTrack);
+    DeviceEventEmitter.emit('library_updated');
+
     return true;
   } catch (error) {
     console.error(`Error al promocionar y guardar ${track.id} localmente:`, error);

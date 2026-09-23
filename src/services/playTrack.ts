@@ -11,6 +11,7 @@ import {
   isTrackDownloaded,
   getLocalFilePath,
 } from './downloadService';
+import { cacheAudioStream } from './cacheManager';
 
 let isPlayerSetup = false;
 
@@ -94,6 +95,14 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
 
     await TrackPlayer.add(trackPayload);
 
+    const trackInfo = await TrackPlayer.getActiveTrack();
+
+    console.log('[TRACKPLAYER TEST] ActiveTrack:', trackInfo);
+
+    const progressInfo = await TrackPlayer.getProgress();
+
+    console.log('[TRACKPLAYER TEST] Progress:', progressInfo);
+
     console.log('[PLAY DEBUG]', {
       id: track.id,
       title: track.title,
@@ -118,7 +127,7 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
     } else {
       requestAnimationFrame(() => {
         setTimeout(() => {
-          triggerBackgroundDownload(track, url);
+          cacheAudioStream(track.id, url);
         }, 3000);
       });
     }

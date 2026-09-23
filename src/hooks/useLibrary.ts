@@ -26,7 +26,10 @@ export const useLibrary = () => {
         );
       } else if (filter === 'downloaded') {
         filtered = allTracks.filter(
-          (t) => t.downloadState === 'completed' && !t.isLocalFile
+          (t) =>
+            (t.downloadState === 'downloading' ||
+              t.downloadState === 'completed') &&
+            !t.isLocalFile
         );
       }
 
@@ -42,9 +45,13 @@ export const useLibrary = () => {
 
   // Escuchar eventos de actualización en tiempo real desde downloadService
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener('library_updated', () => {
-      refreshLibrary();
-    });
+    const subscription = DeviceEventEmitter.addListener(
+      'library_updated',
+      () => {
+        console.log('[useLibrary] 🔄 library_updated recibido');
+        refreshLibrary();
+      },
+    );
 
     return () => {
       subscription.remove();

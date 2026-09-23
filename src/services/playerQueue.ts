@@ -125,10 +125,10 @@ export const prepareAndAddTrack = async (
 };
 
 export const prepareNextTrack = async (): Promise<void> => {
-    const nextIndex = currentIndex + 1;
+    let nextIndex = currentIndex + 1;
 
     if (nextIndex >= currentQueue.length) {
-        return;
+        nextIndex = 0;
     }
 
     const nextTrack = currentQueue[nextIndex];
