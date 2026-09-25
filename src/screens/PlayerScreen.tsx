@@ -68,7 +68,17 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
   const activeTrack = useActiveTrack();
   const { playing } = useIsPlaying();
 
-  const { position, duration } = useProgress(100);
+  /*
+   * TrackPlayer es la única fuente de tiempo.
+   *
+   * Esto alimenta:
+   * - progreso
+   * - tiempo mostrado
+   * - letras
+   *
+   * 50 ms = 20 actualizaciones por segundo.
+   */
+  const { position, duration } = useProgress(50);
 
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
@@ -76,132 +86,25 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
   /*
    * ============================================================
-   * RELOJ REAL DE LAS LETRAS
+   * POSICIÓN REAL DE LAS LETRAS
+   * ============================================================
+   *
+   * IMPORTANTE:
+   *
+   * No utilizamos Date.now().
+   * No utilizamos otro reloj.
+   * No hacemos interpolaciones.
+   *
+   * Las letras reciben exactamente la misma posición que
+   * TrackPlayer está utilizando para el reproductor.
+   */
+  const lyricsCurrentTime = position;
+
+  /*
+   * ============================================================
+   * ESTADO DEL REPRODUCTOR
    * ============================================================
    */
-
-  const [lyricsCurrentTime, setLyricsCurrentTime] =
-    useState(0);
-
-  const lyricsBasePositionRef =
-    useRef(0);
-
-  const lyricsBaseTimestampRef =
-    useRef(Date.now());
-
-  const lyricsTrackIdRef =
-    useRef<string | undefined>(undefined);
-
-  const lyricsPlayingRef =
-    useRef(playing);
-
-  useEffect(() => {
-    lyricsPlayingRef.current =
-      playing;
-  }, [playing]);
-
-  /*
-   * Cada actualización de TrackPlayer vuelve a anclar
-   * nuestro reloj visual de las letras.
-   */
-  useEffect(() => {
-    const safePosition =
-      Number.isFinite(position)
-        ? Math.max(0, position)
-        : 0;
-
-    lyricsBasePositionRef.current =
-      safePosition;
-
-    lyricsBaseTimestampRef.current =
-      Date.now();
-
-    if (!playing) {
-      setLyricsCurrentTime(
-        safePosition
-      );
-    }
-  }, [
-    position,
-    playing,
-  ]);
-
-  /*
-   * Cuando cambia la canción, las letras empiezan
-   * inmediatamente desde 0.
-   */
-  useEffect(() => {
-    if (!activeTrack?.id) {
-      lyricsTrackIdRef.current =
-        undefined;
-
-      lyricsBasePositionRef.current =
-        0;
-
-      lyricsBaseTimestampRef.current =
-        Date.now();
-
-      setLyricsCurrentTime(0);
-
-      return;
-    }
-
-    if (
-      lyricsTrackIdRef.current !==
-      activeTrack.id
-    ) {
-      lyricsTrackIdRef.current =
-        activeTrack.id;
-
-      lyricsBasePositionRef.current =
-        0;
-
-      lyricsBaseTimestampRef.current =
-        Date.now();
-
-      setLyricsCurrentTime(0);
-    }
-  }, [
-    activeTrack?.id,
-  ]);
-
-  /*
-   * Reloj visual de las letras.
-   *
-   * TrackPlayer actualiza position aproximadamente cada 100 ms.
-   * Entre esas actualizaciones avanzamos usando Date.now().
-   */
-  useEffect(() => {
-    if (!playing) {
-      return;
-    }
-
-    const interval =
-      setInterval(() => {
-        const elapsed =
-          (
-            Date.now() -
-            lyricsBaseTimestampRef.current
-          ) / 1000;
-
-        const nextTime =
-          Math.max(
-            0,
-            lyricsBasePositionRef.current +
-            elapsed
-          );
-
-        setLyricsCurrentTime(
-          nextTime
-        );
-      }, 50);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [
-    playing,
-  ]);
 
   const [repeatMode, setRepeatMode] =
     useState<'off' | 'all' | 'one'>('off');
@@ -280,34 +183,18 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       return;
     }
 
-    /*
-     * Preferimos la duración del propio track.
-     * Si todavía no existe, utilizamos la de TrackPlayer.
-     */
     const trackDuration =
       typeof activeTrack.duration === 'number' &&
-        Number.isFinite(activeTrack.duration) &&
-        activeTrack.duration > 0
+      Number.isFinite(activeTrack.duration) &&
+      activeTrack.duration > 0
         ? activeTrack.duration
         : (
           Number.isFinite(duration) &&
-            duration > 0
+          duration > 0
             ? duration
             : 0
         );
 
-    /*
-     * La duración forma parte de la clave.
-     *
-     * Esto es importante:
-     *
-     * 1. Puede empezar siendo 0.
-     * 2. TrackPlayer puede proporcionar la duración unos
-     *    instantes después.
-     * 3. Cuando aparece la duración real, permitimos una
-     *    nueva búsqueda para que lyricsService pueda elegir
-     *    una versión más adecuada.
-     */
     const normalizedDuration =
       trackDuration > 0
         ? Math.round(trackDuration)
@@ -392,6 +279,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     duration,
   ]);
 
+  /*
+   * ============================================================
+   * PROGRESO
+   * ============================================================
+   */
+
   const progressBarWidth =
     useRef(0);
 
@@ -454,14 +347,6 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       new Animated.Value(0)
     ).current;
 
-  /*
-   * ============================================================
-   * BARRA DE PROGRESO
-   * ============================================================
-   *
-   * La dejamos declarada aquí para poder reiniciarla
-   * instantáneamente cuando cambia la canción.
-   */
   const animatedProgress =
     useRef(
       new Animated.Value(0)
@@ -562,24 +447,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     isSeeking.current = false;
     seekPosition.current = 0;
 
-    /*
-     * Reiniciamos inmediatamente la barra visual.
-     *
-     * Esto evita que durante el cambio de canción
-     * se vea durante unos frames el porcentaje de la
-     * canción anterior.
-     */
     animatedProgress.stopAnimation();
     animatedProgress.setValue(0);
-
-    /*
-     * Reiniciamos también el reloj de letras.
-     */
-    lyricsBasePositionRef.current = 0;
-    lyricsBaseTimestampRef.current =
-      Date.now();
-
-    setLyricsCurrentTime(0);
   };
 
   const changeTrackWithSwipe = async (
@@ -598,6 +467,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       );
     }
   };
+
+  /*
+   * ============================================================
+   * SWIPE
+   * ============================================================
+   */
 
   const panResponder = useRef(
     PanResponder.create({
@@ -636,7 +511,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         const progress =
           Math.min(
             Math.abs(dx) /
-            SCREEN_WIDTH,
+              SCREEN_WIDTH,
             1
           );
 
@@ -897,6 +772,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     })
   ).current;
 
+  /*
+   * ============================================================
+   * CAMBIO REAL DE CANCIÓN
+   * ============================================================
+   */
+
   useEffect(() => {
     if (!activeTrack) {
       return;
@@ -911,26 +792,13 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     isSeeking.current = false;
     seekPosition.current = 0;
 
-    /*
-     * Reinicio instantáneo de la barra cuando
-     * realmente cambia activeTrack.
-     */
     animatedProgress.stopAnimation();
     animatedProgress.setValue(0);
-
-    /*
-     * Reinicio inmediato del reloj de letras.
-     */
-    lyricsBasePositionRef.current = 0;
-    lyricsBaseTimestampRef.current =
-      Date.now();
-
-    setLyricsCurrentTime(0);
 
     if (
       swipePreviewTrack &&
       activeTrack.id ===
-      swipePreviewTrack.id
+        swipePreviewTrack.id
     ) {
       setSwipePreviewTrack(null);
 
@@ -1014,7 +882,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       !activeTrack ||
       skipStartTime.current === null ||
       skipTrackId.current !==
-      activeTrack.id
+        activeTrack.id
     ) {
       return;
     }
@@ -1030,6 +898,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     position,
     activeTrack?.id,
   ]);
+
+  /*
+   * ============================================================
+   * AUTO NEXT
+   * ============================================================
+   */
 
   useEffect(() => {
     if (
@@ -1067,12 +941,6 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
       animatedProgress.stopAnimation();
       animatedProgress.setValue(0);
-
-      lyricsBasePositionRef.current = 0;
-      lyricsBaseTimestampRef.current =
-        Date.now();
-
-      setLyricsCurrentTime(0);
 
       TrackPlayer.seekTo(0)
         .then(() =>
@@ -1231,7 +1099,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     const difference =
       Math.abs(
         position -
-        visualSeekPosition
+          visualSeekPosition
       );
 
     if (
@@ -1273,7 +1141,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       const j =
         Math.floor(
           Math.random() *
-          (i + 1)
+            (i + 1)
         );
 
       [
@@ -1343,10 +1211,11 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         safeSecs % 60
       );
 
-    return `${mins}:${remainder < 10
-      ? '0'
-      : ''
-      }${remainder}`;
+    return `${mins}:${
+      remainder < 10
+        ? '0'
+        : ''
+    }${remainder}`;
   };
 
   const calculateSeekPosition = (
@@ -1382,10 +1251,16 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       Math.min(
         currentDuration,
         percentage *
-        currentDuration
+          currentDuration
       )
     );
   };
+
+  /*
+   * ============================================================
+   * NEXT
+   * ============================================================
+   */
 
   const handleNext =
     async () => {
@@ -1433,7 +1308,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             shuffleOrderRef
               .current
               .length !==
-            queue.length ||
+              queue.length ||
             !shuffleOrderRef.current.includes(
               currentIndex
             )
@@ -1535,6 +1410,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       }
     };
 
+  /*
+   * ============================================================
+   * PREVIOUS
+   * ============================================================
+   */
+
   const handlePrevious =
     async () => {
       if (
@@ -1620,6 +1501,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       );
     };
 
+  /*
+   * ============================================================
+   * POSICIÓN VISUAL
+   * ============================================================
+   */
+
   const displayedPosition =
     Math.max(
       0,
@@ -1640,39 +1527,17 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
   const progressPercentage =
     duration > 0
       ? Math.max(
-        0,
-        Math.min(
-          100,
-          (
-            displayedPosition /
-            duration
-          ) * 100
+          0,
+          Math.min(
+            100,
+            (
+              displayedPosition /
+              duration
+            ) * 100
+          )
         )
-      )
       : 0;
 
-  /*
-   * ============================================================
-   * ANIMACIÓN DE LA BARRA
-   * ============================================================
-   *
-   * Antes:
-   *
-   *   TrackPlayer -> actualización ~100 ms
-   *   Animated.timing -> duración 250 ms
-   *
-   * Eso podía provocar que varias animaciones estuvieran
-   * compitiendo entre sí.
-   *
-   * Ahora:
-   *
-   *   1. Cancelamos la animación anterior.
-   *   2. Actualizamos la nueva posición.
-   *   3. La transición dura solo 60 ms.
-   *
-   * Así la barra sigue visualmente al reproductor sin
-   * quedarse "persiguiendo" posiciones antiguas.
-   */
   useEffect(() => {
     animatedProgress.stopAnimation();
 
@@ -1699,6 +1564,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     progressPercentage,
     animatedProgress,
   ]);
+
+  /*
+   * ============================================================
+   * CONTENIDO DEL REPRODUCTOR
+   * ============================================================
+   */
 
   const renderPlayerContent = (
     track: SwipePreviewTrack | null,
@@ -1742,7 +1613,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             style={[
               styles.pillButton,
               showLyrics &&
-              styles.pillButtonLyrics,
+                styles.pillButtonLyrics,
             ]}
             onPress={() => {
               setShowLyrics(
@@ -1794,12 +1665,13 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
               />
             )}
 
-          {!isPreview && !showLyrics && (
-            <View
-              style={styles.swipeArea}
-              {...panResponder.panHandlers}
-            />
-          )}
+          {!isPreview &&
+            !showLyrics && (
+              <View
+                style={styles.swipeArea}
+                {...panResponder.panHandlers}
+              />
+            )}
         </View>
 
         <View
@@ -1907,19 +1779,6 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   newPosition
                 );
 
-                lyricsBasePositionRef.current =
-                  newPosition;
-
-                lyricsBaseTimestampRef.current =
-                  Date.now();
-
-                setLyricsCurrentTime(
-                  newPosition
-                );
-
-                /*
-                 * El dedo manda directamente sobre la barra.
-                 */
                 animatedProgress.stopAnimation();
 
                 animatedProgress.setValue(
@@ -1960,16 +1819,6 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   newPosition
                 );
 
-                lyricsBasePositionRef.current =
-                  newPosition;
-
-                lyricsBaseTimestampRef.current =
-                  Date.now();
-
-                setLyricsCurrentTime(
-                  newPosition
-                );
-
                 animatedProgress.stopAnimation();
 
                 animatedProgress.setValue(
@@ -1995,13 +1844,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                 isSeeking.current =
                   false;
 
-                lyricsBasePositionRef.current =
-                  newPosition;
-
-                lyricsBaseTimestampRef.current =
-                  Date.now();
-
-                setLyricsCurrentTime(
+                setVisualSeekPosition(
                   newPosition
                 );
 
@@ -2136,9 +1979,9 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
                       if (
                         currentIndex !==
-                        -1 &&
+                          -1 &&
                         queue.length >
-                        1
+                          1
                       ) {
                         createShuffleOrder(
                           queue.length,
@@ -2201,8 +2044,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   playing
                     ? {}
                     : {
-                      marginLeft: 4,
-                    }
+                        marginLeft: 4,
+                      }
                 }
               />
             </TouchableOpacity>
@@ -2238,7 +2081,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   size={22}
                   color={
                     repeatMode ===
-                      'off'
+                    'off'
                       ? '#FFF'
                       : COLORS.primary
                   }
@@ -2294,7 +2137,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         style={[
           styles.overlay,
           showLyrics &&
-          styles.lyricsOverlay,
+            styles.lyricsOverlay,
         ]}
         pointerEvents="none"
       />
@@ -2382,7 +2225,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
               style={[
                 styles.overlay,
                 showLyrics &&
-                styles.lyricsOverlay,
+                  styles.lyricsOverlay,
               ]}
             />
 

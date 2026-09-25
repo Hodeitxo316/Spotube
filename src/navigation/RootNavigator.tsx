@@ -1,6 +1,11 @@
-
 // src/navigation/RootNavigator.tsx
-import React, { useEffect, useRef, useState } from 'react';
+
+import React, {
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   View,
   Modal,
@@ -8,20 +13,37 @@ import {
   Animated,
 } from 'react-native';
 
-import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  NavigationContainer,
+} from '@react-navigation/native';
+
+import {
+  createBottomTabNavigator,
+} from '@react-navigation/bottom-tabs';
+
+import {
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
+
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 
+import { HomeScreen } from '../screens/HomeScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
 import { AlbumScreen } from '../screens/AlbumScreen';
 import { ArtistScreen } from '../screens/ArtistScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
+
 import { COLORS } from '../constants/theme';
+
+import {
+  initializeListeningHistoryTracking,
+} from '../services/listeningHistory';
 
 type RootStackParamList = {
   Main: undefined;
@@ -41,15 +63,21 @@ type RootStackParamList = {
 };
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const Stack =
+  createNativeStackNavigator<RootStackParamList>();
 
 /* -------------------------------------------------------------------------- */
 /* TAB ICON                                                                    */
 /* -------------------------------------------------------------------------- */
 
 type TabIconProps = {
-  name: 'search' | 'book';
+  name:
+    | 'home'
+    | 'search'
+    | 'book';
+
   color: string;
+
   focused: boolean;
 };
 
@@ -59,15 +87,21 @@ const TabIcon = ({
   focused,
 }: TabIconProps) => {
   const scale = useRef(
-    new Animated.Value(focused ? 1 : 0.92)
+    new Animated.Value(
+      focused ? 1 : 0.92
+    )
   ).current;
 
   const translateY = useRef(
-    new Animated.Value(focused ? -2 : 0)
+    new Animated.Value(
+      focused ? -2 : 0
+    )
   ).current;
 
   const backgroundOpacity = useRef(
-    new Animated.Value(focused ? 1 : 0)
+    new Animated.Value(
+      focused ? 1 : 0
+    )
   ).current;
 
   useEffect(() => {
@@ -86,11 +120,14 @@ const TabIcon = ({
         friction: 8,
       }),
 
-      Animated.timing(backgroundOpacity, {
-        toValue: focused ? 1 : 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
+      Animated.timing(
+        backgroundOpacity,
+        {
+          toValue: focused ? 1 : 0,
+          duration: 180,
+          useNativeDriver: true,
+        }
+      ),
     ]).start();
   }, [
     focused,
@@ -121,16 +158,24 @@ const TabIcon = ({
         style={[
           styles.tabIconContainer,
           {
-            opacity: animatedBackground,
+            opacity:
+              animatedBackground,
           },
-          focused && styles.tabIconContainerActive,
+          focused &&
+            styles.tabIconContainerActive,
         ]}
       />
 
-      <View style={styles.tabIconContent}>
+      <View
+        style={
+          styles.tabIconContent
+        }
+      >
         <FontAwesome
           name={name}
-          size={focused ? 20 : 18}
+          size={
+            focused ? 20 : 18
+          }
           color={color}
         />
       </View>
@@ -139,14 +184,24 @@ const TabIcon = ({
         style={[
           styles.activeIndicator,
           {
-            opacity: backgroundOpacity,
+            opacity:
+              backgroundOpacity,
+
             transform: [
               {
                 scaleX:
-                  backgroundOpacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.2, 1],
-                  }),
+                  backgroundOpacity.interpolate(
+                    {
+                      inputRange: [
+                        0,
+                        1,
+                      ],
+                      outputRange: [
+                        0.2,
+                        1,
+                      ],
+                    }
+                  ),
               },
             ],
           },
@@ -161,7 +216,8 @@ const TabIcon = ({
 /* -------------------------------------------------------------------------- */
 
 const TabNavigator = () => {
-  const insets = useSafeAreaInsets();
+  const insets =
+    useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -170,8 +226,11 @@ const TabNavigator = () => {
 
         tabBarShowLabel: true,
 
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: '#777777',
+        tabBarActiveTintColor:
+          COLORS.primary,
+
+        tabBarInactiveTintColor:
+          '#777777',
 
         tabBarLabelStyle: {
           fontSize: 10,
@@ -192,14 +251,20 @@ const TabNavigator = () => {
           left: 14,
           right: 14,
 
-          bottom: Math.max(insets.bottom, 8) + 8,
+          bottom:
+            Math.max(
+              insets.bottom,
+              8
+            ) + 8,
 
           height: 72,
 
-          backgroundColor: '#171717',
+          backgroundColor:
+            '#171717',
 
           borderWidth: 1,
-          borderColor: '#292929',
+          borderColor:
+            '#292929',
 
           borderRadius: 22,
 
@@ -209,19 +274,38 @@ const TabNavigator = () => {
           zIndex: 200,
           elevation: 20,
 
-          shadowColor: '#000000',
+          shadowColor:
+            '#000000',
+
           shadowOpacity: 0.5,
+
           shadowRadius: 20,
+
           shadowOffset: {
             width: 0,
             height: 10,
           },
         },
 
-        tabBarIcon: ({ color, focused }) => {
-          let iconName: 'search' | 'book' = 'search';
+        tabBarIcon: ({
+          color,
+          focused,
+        }) => {
+          let iconName:
+            | 'home'
+            | 'search'
+            | 'book' =
+            'search';
 
-          if (route.name === 'Library') {
+          if (
+            route.name ===
+            'Home'
+          ) {
+            iconName = 'home';
+          } else if (
+            route.name ===
+            'Library'
+          ) {
             iconName = 'book';
           }
 
@@ -235,6 +319,14 @@ const TabNavigator = () => {
         },
       })}
     >
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: 'Inicio',
+        }}
+      />
+
       <Tab.Screen
         name="Search"
         component={SearchScreen}
@@ -264,9 +356,26 @@ export const RootNavigator = () => {
     setPlayerModalVisible,
   ] = useState(false);
 
+  /*
+   * El historial se inicializa una sola vez
+   * mientras vive el RootNavigator.
+   *
+   * No depende de HomeScreen, así que las
+   * reproducciones desde Search, Library,
+   * Album o Artist también pueden registrarse.
+   */
+  useEffect(() => {
+    const cleanup =
+      initializeListeningHistoryTracking();
+
+    return cleanup;
+  }, []);
+
   return (
     <NavigationContainer>
-      <View style={styles.wrapper}>
+      <View
+        style={styles.wrapper}
+      >
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
@@ -297,17 +406,27 @@ export const RootNavigator = () => {
 
         {/* Reproductor modal de pantalla completa */}
         <Modal
-          visible={isPlayerModalVisible}
+          visible={
+            isPlayerModalVisible
+          }
           animationType="slide"
           presentationStyle="fullScreen"
           onRequestClose={() =>
-            setPlayerModalVisible(false)
+            setPlayerModalVisible(
+              false
+            )
           }
         >
-          <View style={styles.modalContainer}>
+          <View
+            style={
+              styles.modalContainer
+            }
+          >
             <PlayerScreen
               onClose={() =>
-                setPlayerModalVisible(false)
+                setPlayerModalVisible(
+                  false
+                )
               }
             />
           </View>
@@ -324,12 +443,14 @@ export const RootNavigator = () => {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
 
   modalContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
 
   /* ---------------------------------------------------------------------- */
@@ -340,7 +461,8 @@ const styles = StyleSheet.create({
     width: 48,
     height: 34,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent:
+      'flex-start',
     position: 'relative',
     paddingTop: 1,
   },
@@ -353,11 +475,13 @@ const styles = StyleSheet.create({
 
     borderRadius: 11,
 
-    backgroundColor: '#FF5C00',
+    backgroundColor:
+      '#FF5C00',
   },
 
   tabIconContainerActive: {
-    backgroundColor: 'rgba(255, 92, 0, 0.16)',
+    backgroundColor:
+      'rgba(255, 92, 0, 0.16)',
   },
 
   tabIconContent: {
@@ -365,7 +489,8 @@ const styles = StyleSheet.create({
     height: 32,
 
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
 
     zIndex: 2,
   },
@@ -380,9 +505,9 @@ const styles = StyleSheet.create({
 
     borderRadius: 2,
 
-    backgroundColor: COLORS.primary,
+    backgroundColor:
+      COLORS.primary,
   },
 });
 
 export default RootNavigator;
-

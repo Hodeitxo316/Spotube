@@ -87,6 +87,7 @@ const fetchJson = async <T>(
        * En lugar de abandonar inmediatamente,
        * hacemos un par de reintentos controlados.
        */
+
       if (
         response.status === 520 &&
         attempt < MAX_RETRIES
@@ -138,6 +139,36 @@ const parseSyncedLyrics = (
     const parsedLyrics =
       parseLrc(syncedLyrics);
 
+    /*
+     * DEBUG:
+     * Mostramos los primeros timestamps que realmente
+     * devuelve LRCLIB después de pasar por nuestro parser.
+     *
+     * Esto nos permitirá saber si el desfase ya viene
+     * desde LRCLIB o aparece posteriormente en el reproductor.
+     */
+
+    console.log(
+      '[LYRICS] Primeros timestamps:',
+      parsedLyrics
+        .slice(0, 10)
+        .map(line => ({
+          time: Number(line.time.toFixed(3)),
+          text: line.text,
+        }))
+    );
+
+    console.log(
+      '[LYRICS] Último timestamp:',
+      parsedLyrics.length > 0
+        ? Number(
+            parsedLyrics[
+              parsedLyrics.length - 1
+            ].time.toFixed(3)
+          )
+        : null
+    );
+
     return parsedLyrics;
   } catch (error) {
     console.warn(
@@ -156,7 +187,7 @@ const normalizeText = (
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[()[\]{}]/g, ' ')
+    .replace(/[\(\)\[\]\{\}]/g, ' ')
     .replace(/[-–—_/|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -240,6 +271,7 @@ const findBestCandidate = (
    * Primero intentamos encontrar una coincidencia
    * real de título + artista.
    */
+
   const matchingTitleAndArtist =
     withLyrics.filter(track =>
       titleMatches(
@@ -263,6 +295,7 @@ const findBestCandidate = (
    * Si tenemos duración, elegimos la versión cuya
    * duración esté más cerca de la canción reproducida.
    */
+
   const sorted = [...candidates].sort(
     (a, b) => {
       if (duration <= 0) {
@@ -298,6 +331,53 @@ const buildApiUrl = (
     new URLSearchParams(params);
 
   return `${LRCLIB_BASE_URL}/${endpoint}?${searchParams.toString()}`;
+};
+
+const logSelectedTrack = (
+  label: string,
+  track: LrcLibTrack | null,
+  requestedTitle: string,
+  requestedArtist: string,
+  requestedDuration: number
+): void => {
+  console.log(
+    `[LYRICS] 🎯 ${label}:`,
+    {
+      id: track?.id,
+      title:
+        track?.trackName ||
+        track?.name ||
+        null,
+      artist:
+        track?.artistName ||
+        null,
+      album:
+        track?.albumName ||
+        null,
+      duration:
+        track?.duration ??
+        null,
+      requestedTitle,
+      requestedArtist,
+      requestedDuration,
+      durationDifference:
+        typeof track?.duration === 'number' &&
+        requestedDuration > 0
+          ? Number(
+              (
+                track.duration -
+                requestedDuration
+              ).toFixed(3)
+            )
+          : null,
+      hasSyncedLyrics:
+        typeof track?.syncedLyrics ===
+          'string' &&
+        track.syncedLyrics.trim().length > 0,
+      hasWordSync:
+        track?.hasWordSync ?? false,
+    }
+  );
 };
 
 const getLyricsFromTrack = (
@@ -390,6 +470,14 @@ export const fetchSyncedLyrics = async (
       exactTrack
     );
 
+    logSelectedTrack(
+      'REGISTRO EXACTO',
+      exactTrack,
+      cleanTitle,
+      cleanArtist,
+      safeDuration
+    );
+
     const exactLyrics =
       getLyricsFromTrack(exactTrack);
 
@@ -439,15 +527,26 @@ export const fetchSyncedLyrics = async (
           safeDuration
         );
 
+      logSelectedTrack(
+        'CANDIDATO FINAL TÍTULO + ARTISTA',
+        bestCandidate,
+        cleanTitle,
+        cleanArtist,
+        safeDuration
+      );
+
       if (bestCandidate) {
         console.log(
           '[LYRICS] 🎵 Candidato encontrado:',
           {
+            id: bestCandidate.id,
             title:
               bestCandidate.trackName ||
               bestCandidate.name,
             artist:
               bestCandidate.artistName,
+            album:
+              bestCandidate.albumName,
             duration:
               bestCandidate.duration,
           }
@@ -508,15 +607,26 @@ export const fetchSyncedLyrics = async (
           safeDuration
         );
 
+      logSelectedTrack(
+        'CANDIDATO FINAL SOLO TÍTULO',
+        bestTitleCandidate,
+        cleanTitle,
+        cleanArtist,
+        safeDuration
+      );
+
       if (bestTitleCandidate) {
         console.log(
           '[LYRICS] 🎵 Candidato por título:',
           {
+            id: bestTitleCandidate.id,
             title:
               bestTitleCandidate.trackName ||
               bestTitleCandidate.name,
             artist:
               bestTitleCandidate.artistName,
+            album:
+              bestTitleCandidate.albumName,
             duration:
               bestTitleCandidate.duration,
           }
