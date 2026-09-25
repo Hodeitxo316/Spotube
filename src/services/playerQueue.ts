@@ -1,3 +1,4 @@
+// src/services/playerQueue.ts
 import TrackPlayer, {
     TrackType,
 } from 'react-native-track-player';
@@ -31,9 +32,46 @@ export const setCurrentQueueIndex = (
 };
 
 /**
+ * Devuelve la siguiente canción de nuestra cola lógica.
+ *
+ * No modifica TrackPlayer.
+ */
+export const getNextTrack = (): TrackItem | null => {
+    if (currentQueue.length === 0) {
+        return null;
+    }
+
+    const nextIndex =
+        currentIndex + 1 >= currentQueue.length
+            ? 0
+            : currentIndex + 1;
+
+    return currentQueue[nextIndex] || null;
+};
+
+/**
+ * Devuelve la canción anterior de nuestra cola lógica.
+ *
+ * No modifica TrackPlayer.
+ */
+export const getPreviousTrack = (): TrackItem | null => {
+    if (currentQueue.length === 0) {
+        return null;
+    }
+
+    const previousIndex =
+        currentIndex - 1 < 0
+            ? currentQueue.length - 1
+            : currentIndex - 1;
+
+    return currentQueue[previousIndex] || null;
+};
+
+/**
  * Prepara una cola real dentro de TrackPlayer.
  *
- * De momento NO la utilizamos desde ninguna pantalla.
+ * De momento NO la utilizamos desde PlayerScreen.
+ * Se mantiene para no romper otras partes de la aplicación.
  */
 export const preparePlayerQueue = async (
     tracks: TrackItem[],
@@ -108,7 +146,7 @@ export const prepareAndAddTrack = async (
     if (!isLocal) {
         playerTrack.headers = {
             'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/120.0.0.0',
         };
     }
 
@@ -121,7 +159,6 @@ export const prepareAndAddTrack = async (
     console.log(
         `[Queue] Siguiente canción lista: ${track.title}`
     );
-
 };
 
 export const prepareNextTrack = async (): Promise<void> => {
@@ -132,6 +169,10 @@ export const prepareNextTrack = async (): Promise<void> => {
     }
 
     const nextTrack = currentQueue[nextIndex];
+
+    if (!nextTrack) {
+        return;
+    }
 
     await prepareAndAddTrack(nextTrack);
 

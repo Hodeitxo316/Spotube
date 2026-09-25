@@ -97,11 +97,11 @@ export const playTrack = async (track: TrackItem): Promise<void> => {
 
     const trackInfo = await TrackPlayer.getActiveTrack();
 
-    console.log('[TRACKPLAYER TEST] ActiveTrack:', trackInfo);
+console.log('[TRACKPLAYER TEST] ActiveTrack:', trackInfo);
 
-    const progressInfo = await TrackPlayer.getProgress();
+const progressInfo = await TrackPlayer.getProgress();
 
-    console.log('[TRACKPLAYER TEST] Progress:', progressInfo);
+console.log('[TRACKPLAYER TEST] Progress:', progressInfo);
 
     console.log('[PLAY DEBUG]', {
       id: track.id,
