@@ -21,6 +21,8 @@ import {
   PanResponder,
 } from 'react-native';
 
+import { youtubeService } from '../services/youtubeService';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -61,6 +63,15 @@ export const LibraryScreen = () => {
   const [menuPlaylist, setMenuPlaylist] =
     useState<Playlist | null>(null);
 
+  const [editingLocalTrack, setEditingLocalTrack] =
+    useState<Track | null>(null);
+
+  const [localTrackName, setLocalTrackName] =
+    useState('');
+
+  const [showLocalEditor, setShowLocalEditor] =
+    useState(false);
+
   const [section, setSection] =
     useState<LibrarySection>('home');
 
@@ -88,6 +99,19 @@ export const LibraryScreen = () => {
   const [sortOrder, setSortOrder] = useState<
     'recent' | 'oldest' | 'titleAsc' | 'titleDesc' | 'artistAsc'
   >('recent');
+
+  const [localCoverSearch, setLocalCoverSearch] = useState('');
+  const [localCoverResults, setLocalCoverResults] = useState<TrackItem[]>([]);
+  const [localCoverLoading, setLocalCoverLoading] = useState(false);
+
+  const [selectedLocalCover, setSelectedLocalCover] =
+    useState<string | null>(null);
+
+  const [showLocalCoverSearch, setShowLocalCoverSearch] =
+    useState(false);
+
+  const [trackToDelete, setTrackToDelete] =
+    useState<Track | null>(null);
 
   // =========================
   // ANIMACIONES HOME
@@ -283,25 +307,8 @@ export const LibraryScreen = () => {
   // ELIMINAR CANCIÓN
   // =========================
 
-  const handleConfirmDelete = (
-    track: Track,
-  ) => {
-    Alert.alert(
-      'Eliminar canción',
-      `¿Deseas eliminar "${track.title}" de tu biblioteca y liberar su espacio en disco?`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () =>
-            deleteTrackCompletely(track.id),
-        },
-      ],
-    );
+  const handleConfirmDelete = (track: Track) => {
+    setTrackToDelete(track);
   };
 
   // =========================
@@ -972,6 +979,66 @@ export const LibraryScreen = () => {
       },
     });
 
+  const handleSaveLocalTrack = () => {
+    if (!editingLocalTrack) {
+      return;
+    }
+
+    const newTitle = localTrackName.trim();
+
+    if (!newTitle) {
+      Alert.alert(
+        'Nombre vacío',
+        'Escribe un nombre para el archivo.',
+      );
+      return;
+    }
+
+    libraryStorage.updateTrack(
+      editingLocalTrack.id,
+      {
+        title: newTitle,
+        coverUrl:
+          selectedLocalCover ||
+          editingLocalTrack.coverUrl,
+      },
+    );
+
+    setShowLocalEditor(false);
+    setEditingLocalTrack(null);
+    setLocalTrackName('');
+    setSelectedLocalCover(null);
+    refreshLibrary();
+  };
+
+  const handleSearchLocalCover = async () => {
+    const searchText = localCoverSearch.trim();
+
+    if (!searchText) {
+      return;
+    }
+
+    try {
+      setLocalCoverLoading(true);
+
+      const tracks = await youtubeService.searchTracks(searchText);
+
+      setLocalCoverResults(tracks);
+    } catch (error) {
+      console.error(
+        '[LibraryScreen] Error buscando portada:',
+        error,
+      );
+
+      Alert.alert(
+        'Error',
+        'No se han podido buscar canciones.',
+      );
+    } finally {
+      setLocalCoverLoading(false);
+    }
+  };
+
   // =========================
   // TARJETA DE CANCIÓN
   // =========================
@@ -1191,17 +1258,14 @@ export const LibraryScreen = () => {
                 />
               </TouchableOpacity>
 
-              {section ===
-                'playlist' ? (
+              {section === 'playlist' ? (
                 <TouchableOpacity
                   onPress={() =>
                     handleRemoveSongFromPlaylist(
                       item.id,
                     )
                   }
-                  style={
-                    styles.actionButton
-                  }
+                  style={styles.actionButton}
                   hitSlop={{
                     top: 10,
                     bottom: 10,
@@ -1210,21 +1274,38 @@ export const LibraryScreen = () => {
                   }}
                 >
                   <FontAwesome
-                    name="ellipsis-h"
+                    name="trash-o"
                     size={20}
+                    color="#FF4D4D"
+                  />
+                </TouchableOpacity>
+              ) : item.isLocalFile ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditingLocalTrack(item);
+                    setLocalTrackName(item.title);
+                    setShowLocalEditor(true);
+                  }}
+                  style={styles.actionButton}
+                  hitSlop={{
+                    top: 10,
+                    bottom: 10,
+                    left: 10,
+                    right: 10,
+                  }}
+                >
+                  <FontAwesome
+                    name="ellipsis-v"
+                    size={19}
                     color="#B3B3B3"
                   />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   onPress={() =>
-                    handleConfirmDelete(
-                      item,
-                    )
+                    handleConfirmDelete(item)
                   }
-                  style={
-                    styles.actionButton
-                  }
+                  style={styles.actionButton}
                   hitSlop={{
                     top: 10,
                     bottom: 10,
@@ -1235,7 +1316,7 @@ export const LibraryScreen = () => {
                   <FontAwesome
                     name="trash-o"
                     size={19}
-                    color="#B3B3B3"
+                    color="#FF4D4D"
                   />
                 </TouchableOpacity>
               )}
@@ -1293,6 +1374,8 @@ export const LibraryScreen = () => {
         {/* ==================================
             HERO
         ================================== */}
+
+
 
         <Animated.View
           style={[
@@ -2658,6 +2741,9 @@ export const LibraryScreen = () => {
           />
         </View>
       </SafeAreaView>
+
+
+
     );
   }
 
@@ -3034,6 +3120,7 @@ export const LibraryScreen = () => {
                       )}
                     </View>
                   </TouchableOpacity>
+
                 );
               }}
               ListEmptyComponent={
@@ -3275,6 +3362,359 @@ export const LibraryScreen = () => {
         </TouchableOpacity>
       </Modal>
 
+      {/* BUSCAR PORTADA PARA ARCHIVO LOCAL */}
+      <Modal
+        visible={showLocalCoverSearch}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowLocalCoverSearch(false);
+        }}
+      >
+        <View style={styles.localCoverSearchOverlay}>
+          <View style={styles.localCoverSearchContainer}>
+
+            <View style={styles.localCoverSearchHeader}>
+              <Text style={styles.localCoverSearchTitle}>
+                Buscar portada
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowLocalCoverSearch(false);
+                }}
+                style={styles.localCoverSearchClose}
+              >
+                <Text style={styles.localCoverSearchCloseText}>
+                  ×
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.localCoverSearchBar}>
+              <TextInput
+                value={localCoverSearch}
+                onChangeText={setLocalCoverSearch}
+                placeholder="Busca una canción..."
+                placeholderTextColor="#777777"
+                style={styles.localCoverSearchInput}
+                autoCorrect={false}
+                autoCapitalize="none"
+                selectionColor="#FF5500"
+                returnKeyType="search"
+                onSubmitEditing={handleSearchLocalCover}
+              />
+
+              <TouchableOpacity
+                onPress={handleSearchLocalCover}
+                style={styles.localCoverSearchButton}
+                disabled={localCoverLoading}
+              >
+                {localCoverLoading ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                    size="small"
+                  />
+                ) : (
+                  <FontAwesome
+                    name="search"
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {localCoverResults.length > 0 && (
+              <FlatList
+                data={localCoverResults}
+                keyExtractor={(item, index) =>
+                  `${item.id}-${index}`
+                }
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.localCoverResults}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.localCoverResultItem}
+                    activeOpacity={0.75}
+                    onPress={() => {
+                      setSelectedLocalCover(item.artwork);
+                      setShowLocalCoverSearch(false);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: item.artwork }}
+                      style={styles.localCoverResultImage}
+                      resizeMode="cover"
+                    />
+
+                    <View style={styles.localCoverResultInfo}>
+                      <Text
+                        style={styles.localCoverResultTitle}
+                        numberOfLines={1}
+                      >
+                        {item.title}
+                      </Text>
+
+                      <Text
+                        style={styles.localCoverResultArtist}
+                        numberOfLines={1}
+                      >
+                        {item.artist}
+                      </Text>
+                    </View>
+
+                    <FontAwesome
+                      name="check"
+                      size={16}
+                      color="#777777"
+                    />
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            {!localCoverLoading &&
+              localCoverSearch.trim().length >= 3 &&
+              localCoverResults.length === 0 && (
+                <View style={styles.localCoverEmpty}>
+                  <Text style={styles.localCoverEmptyText}>
+                    No se encontraron canciones.
+                  </Text>
+                </View>
+              )}
+
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showLocalEditor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowLocalEditor(false);
+          setEditingLocalTrack(null);
+          setLocalTrackName('');
+        }}
+      >
+        <View style={styles.localEditorOverlay}>
+          <View style={styles.localEditorContainer}>
+
+            <Text style={styles.localEditorTitle}>
+              Editar archivo local
+            </Text>
+
+            <View style={styles.localCoverSection}>
+
+              <View style={styles.localCoverPreview}>
+                {selectedLocalCover || editingLocalTrack?.coverUrl ? (
+                  <Image
+                    source={{
+                      uri:
+                        selectedLocalCover ||
+                        editingLocalTrack?.coverUrl ||
+                        '',
+                    }}
+                    style={styles.localCoverImage}
+                  />
+                ) : (
+                  <FontAwesome
+                    name="music"
+                    size={38}
+                    color="#777777"
+                  />
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={styles.changeCoverButton}
+                onPress={() => {
+                  setLocalCoverSearch('');
+                  setLocalCoverResults([]);
+                  setShowLocalCoverSearch(true);
+                }}
+              >
+                <FontAwesome
+                  name="image"
+                  size={16}
+                  color="#FFFFFF"
+                />
+
+                <Text style={styles.changeCoverButtonText}>
+                  Cambiar portada
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+
+            <Text style={styles.localEditorLabel}>
+              Nombre
+            </Text>
+
+            <TextInput
+              value={localTrackName}
+              onChangeText={setLocalTrackName}
+              placeholder="Nombre de la canción"
+              placeholderTextColor="#777777"
+              style={styles.localEditorInput}
+              autoCorrect={false}
+              autoCapitalize="sentences"
+              selectionColor="#FF5500"
+            />
+
+            <View style={styles.localEditorButtons}>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowLocalEditor(false);
+                  setEditingLocalTrack(null);
+                  setLocalTrackName('');
+                }}
+                style={styles.localEditorCancelButton}
+              >
+                <Text style={styles.localEditorCancelText}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSaveLocalTrack}
+                style={styles.localEditorSaveButton}
+              >
+                <Text style={styles.localEditorSaveText}>
+                  Guardar
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={trackToDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setTrackToDelete(null)
+        }
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalCard}>
+
+            <View style={styles.deleteModalIcon}>
+              <FontAwesome
+                name="trash-o"
+                size={28}
+                color="#FF4D4D"
+              />
+            </View>
+
+            <Text style={styles.deleteModalEyebrow}>
+              DESCARGA
+            </Text>
+
+            <Text style={styles.deleteModalTitle}>
+              Eliminar canción
+            </Text>
+
+            <Text style={styles.deleteModalDescription}>
+              ¿Quieres eliminar esta canción de tus descargas?
+            </Text>
+
+            {trackToDelete && (
+              <View style={styles.deleteTrackPreview}>
+
+                {trackToDelete.coverUrl ? (
+                  <Image
+                    source={{
+                      uri: trackToDelete.coverUrl,
+                    }}
+                    style={styles.deleteTrackCover}
+                  />
+                ) : (
+                  <View
+                    style={
+                      styles.deleteTrackCoverPlaceholder
+                    }
+                  >
+                    <FontAwesome
+                      name="music"
+                      size={20}
+                      color="#777777"
+                    />
+                  </View>
+                )}
+
+                <View style={styles.deleteTrackInfo}>
+                  <Text
+                    style={styles.deleteTrackTitle}
+                    numberOfLines={1}
+                  >
+                    {trackToDelete.title}
+                  </Text>
+
+                  <Text
+                    style={styles.deleteTrackArtist}
+                    numberOfLines={1}
+                  >
+                    {trackToDelete.artist}
+                  </Text>
+                </View>
+
+              </View>
+            )}
+
+            <View style={styles.deleteModalActions}>
+
+              <TouchableOpacity
+                style={styles.deleteCancelButton}
+                activeOpacity={0.8}
+                onPress={() =>
+                  setTrackToDelete(null)
+                }
+              >
+                <Text style={styles.deleteCancelText}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteConfirmButton}
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (!trackToDelete) {
+                    return;
+                  }
+
+                  const trackId =
+                    trackToDelete.id;
+
+                  setTrackToDelete(null);
+
+                  deleteTrackCompletely(trackId);
+                }}
+              >
+                <FontAwesome
+                  name="trash-o"
+                  size={15}
+                  color="#FFFFFF"
+                />
+
+                <Text style={styles.deleteConfirmText}>
+                  Eliminar
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
       <SafeAreaView
         style={styles.container}
       >
@@ -3300,7 +3740,7 @@ const styles = StyleSheet.create({
   homeContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 40,
+    paddingBottom: 220,
     backgroundColor: 'transparent',
   },
 
@@ -6063,8 +6503,8 @@ const styles = StyleSheet.create({
   },
 
   trackListContent: {
-    paddingBottom: 30,
-    paddingTop: 2,
+    paddingBottom: 200,
+    paddingTop: 10,
   },
 
   premiumEmptyState: {
@@ -6177,6 +6617,372 @@ const styles = StyleSheet.create({
   homeScroll: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+
+  localEditorOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+
+  localEditorContainer: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#181818',
+    borderRadius: 16,
+    padding: 22,
+  },
+
+  localEditorTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 24,
+  },
+
+  localEditorLabel: {
+    color: '#B3B3B3',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+
+  localEditorInput: {
+    height: 50,
+    backgroundColor: '#282828',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginBottom: 24,
+  },
+
+  localEditorButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  localEditorCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+
+  localEditorCancelText: {
+    color: '#B3B3B3',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  localEditorSaveButton: {
+    backgroundColor: '#FF5500',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+
+  localEditorSaveText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  localCoverSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+
+  localCoverPreview: {
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+    backgroundColor: '#282828',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+
+  localCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  changeCoverButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#282828',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+
+  changeCoverButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+
+  localCoverSearchOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'flex-end',
+  },
+
+  localCoverSearchContainer: {
+    width: '100%',
+    height: '78%',
+    backgroundColor: '#181818',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 20,
+  },
+
+  localCoverSearchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+
+  localCoverSearchTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+
+  localCoverSearchClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#282828',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  localCoverSearchCloseText: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    lineHeight: 28,
+    fontWeight: '300',
+  },
+
+  localCoverSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+
+  localCoverSearchInput: {
+    flex: 1,
+    height: 48,
+    backgroundColor: '#282828',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    color: '#FFFFFF',
+    fontSize: 15,
+    marginRight: 10,
+  },
+
+  localCoverSearchButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#FF5500',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  localCoverResults: {
+    flex: 1,
+  },
+
+  localCoverResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#282828',
+  },
+
+  localCoverResultImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 6,
+    backgroundColor: '#282828',
+  },
+
+  localCoverResultInfo: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 10,
+  },
+
+  localCoverResultTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  localCoverResultArtist: {
+    color: '#A7A7A7',
+    fontSize: 13,
+    marginTop: 4,
+  },
+
+  localCoverEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  localCoverEmptyText: {
+    color: '#777777',
+    fontSize: 14,
+  },
+
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+
+  deleteModalCard: {
+    width: '100%',
+    maxWidth: 390,
+    backgroundColor: '#151515',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 24,
+  },
+
+  deleteModalIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: 'rgba(255,77,77,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,77,0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 18,
+  },
+
+  deleteModalEyebrow: {
+    color: '#FF4D4D',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+
+  deleteModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  deleteModalDescription: {
+    color: '#999999',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+
+  deleteTrackPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1D1D1D',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    padding: 10,
+    marginBottom: 22,
+  },
+
+  deleteTrackCover: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: '#222222',
+  },
+
+  deleteTrackCoverPlaceholder: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: '#222222',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  deleteTrackInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  deleteTrackTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+
+  deleteTrackArtist: {
+    color: '#888888',
+    fontSize: 13,
+  },
+
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  deleteCancelButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#222222',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  deleteCancelText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  deleteConfirmButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#FF4D4D',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  deleteConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
 
 });

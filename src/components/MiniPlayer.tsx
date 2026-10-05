@@ -17,10 +17,14 @@ import { COLORS } from '../constants/theme';
 
 interface MiniPlayerProps {
     onPressExpand: () => void;
+    isArtistScreen?: boolean;
+    isAlbumScreen?: boolean;
 }
 
 export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     onPressExpand,
+    isArtistScreen = false,
+    isAlbumScreen = false,
 }) => {
     const activeTrack = useActiveTrack();
     const { playing } = useIsPlaying();
@@ -39,14 +43,18 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
     };
 
     /*
-     * La barra inferior mide 72px y está situada:
+     * Con barra inferior:
+     * bottom más alto = MiniPlayer más arriba.
      *
-     * bottom = max(insets.bottom, 8) + 8
+     * Lo colocamos ligeramente más arriba que
+     * la versión anterior.
      *
-     * Por eso colocamos el MiniPlayer justo encima de ella.
+     * En artista/álbum no modificamos la posición.
      */
     const bottomPosition =
-        Math.max(insets.bottom, 8) + 90;
+        isArtistScreen || isAlbumScreen
+            ? Math.max(insets.bottom, 8) + 8
+            : Math.max(insets.bottom, 8) + 80;
 
     return (
         <TouchableOpacity
@@ -56,38 +64,71 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                     bottom: bottomPosition,
                 },
             ]}
-            activeOpacity={0.94}
+            activeOpacity={0.95}
             onPress={onPressExpand}
         >
-            {/* Brillo superior */}
-            <View style={styles.topHighlight} />
+            {/* Fondo ambiental */}
+            <View style={styles.ambientGlow} />
 
-            {/* Borde luminoso sutil */}
-            <View style={styles.borderGlow} />
+            {/* Reflejo superior */}
+            <View style={styles.topReflection} />
 
-            {/* CARÁTULA */}
-            <View style={styles.artworkWrapper}>
-                <Image
-                    source={{
-                        uri: activeTrack.artwork,
-                    }}
-                    style={styles.artwork}
-                />
+            {/* CONTENIDO PRINCIPAL */}
+            <View style={styles.content}>
+                {/* CARÁTULA */}
+                <View style={styles.artworkOuter}>
+                    <View style={styles.artworkWrapper}>
+                        <Image
+                            source={{
+                                uri: activeTrack.artwork,
+                            }}
+                            style={styles.artwork}
+                        />
 
-                <View style={styles.artworkOverlay} />
-            </View>
+                        <View
+                            style={
+                                styles.artworkOverlay
+                            }
+                        />
+                    </View>
+                </View>
 
-            {/* INFORMACIÓN */}
-            <View style={styles.infoContainer}>
-                <Text
-                    style={styles.title}
-                    numberOfLines={1}
-                >
-                    {activeTrack.title}
-                </Text>
+                {/* INFORMACIÓN */}
+                <View style={styles.infoContainer}>
+                    <View style={styles.statusRow}>
+                        {playing ? (
+                            <>
+                                <View
+                                    style={
+                                        styles.statusDot
+                                    }
+                                />
 
-                <View style={styles.artistRow}>
-                    <View style={styles.artistDot} />
+                                <Text
+                                    style={
+                                        styles.statusText
+                                    }
+                                >
+                                    EN REPRODUCCIÓN
+                                </Text>
+                            </>
+                        ) : (
+                            <Text
+                                style={
+                                    styles.statusTextPaused
+                                }
+                            >
+                                EN PAUSA
+                            </Text>
+                        )}
+                    </View>
+
+                    <Text
+                        style={styles.title}
+                        numberOfLines={1}
+                    >
+                        {activeTrack.title}
+                    </Text>
 
                     <Text
                         style={styles.artist}
@@ -96,116 +137,180 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                         {activeTrack.artist}
                     </Text>
                 </View>
-            </View>
 
-            {/* PLAY / PAUSE */}
-            <TouchableOpacity
-                style={styles.playButton}
-                onPress={togglePlayPause}
-                activeOpacity={0.82}
-                hitSlop={{
-                    top: 8,
-                    bottom: 8,
-                    left: 8,
-                    right: 8,
-                }}
-            >
-                <View style={styles.playButtonInner}>
-                    <Text style={styles.playIcon}>
-                        {playing ? '⏸' : '▶'}
-                    </Text>
-                </View>
-            </TouchableOpacity>
+                {/* PLAY / PAUSE */}
+                <TouchableOpacity
+                    style={styles.playButton}
+                    onPress={togglePlayPause}
+                    activeOpacity={0.78}
+                    hitSlop={{
+                        top: 8,
+                        bottom: 8,
+                        left: 8,
+                        right: 8,
+                    }}
+                >
+                    <View
+                        style={
+                            styles.playButtonInner
+                        }
+                    >
+                        <Text
+                            style={
+                                styles.playIcon
+                            }
+                        >
+                            {playing
+                                ? '⏸'
+                                : '▶'}
+                        </Text>
+                    </View>
+                </TouchableOpacity>
+            </View>
         </TouchableOpacity>
     );
 };
 
 const styles = StyleSheet.create({
+    /*
+     * =====================================================
+     * CONTENEDOR
+     * =====================================================
+     */
+
     container: {
         position: 'absolute',
 
-        left: 12,
-        right: 12,
+        left: 10,
+        right: 10,
 
-        height: 68,
+        height: 74,
 
-        borderRadius: 20,
+        borderRadius: 23,
 
-        backgroundColor: '#17181D',
-
-        flexDirection: 'row',
-        alignItems: 'center',
-
-        paddingHorizontal: 9,
+        backgroundColor: '#111216',
 
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.13)',
+
+        borderColor:
+            'rgba(255,255,255,0.085)',
 
         zIndex: 100,
-        elevation: 18,
+
+        elevation: 25,
 
         shadowColor: '#000000',
+
         shadowOffset: {
             width: 0,
-            height: 8,
+            height: 12,
         },
-        shadowOpacity: 0.45,
-        shadowRadius: 16,
+
+        shadowOpacity: 0.58,
+
+        shadowRadius: 22,
+
+        overflow: 'hidden',
     },
 
-    topHighlight: {
+    /*
+     * Luz ambiental interior.
+     */
+    ambientGlow: {
+        position: 'absolute',
+
+        width: 230,
+        height: 120,
+
+        top: -72,
+        left: 80,
+
+        borderRadius: 100,
+
+        backgroundColor:
+            'rgba(255,255,255,0.025)',
+    },
+
+    /*
+     * Reflejo superior.
+     */
+    topReflection: {
         position: 'absolute',
 
         top: 0,
-        left: 22,
-        right: 22,
+        left: 32,
+        right: 32,
 
         height: 1,
 
         backgroundColor:
-            'rgba(255,255,255,0.22)',
+            'rgba(255,255,255,0.20)',
 
         borderRadius: 999,
     },
 
-    borderGlow: {
-        position: 'absolute',
+    /*
+     * =====================================================
+     * CONTENIDO
+     * =====================================================
+     */
 
-        top: 1,
-        left: 20,
-        right: 20,
+    content: {
+        flex: 1,
 
-        height: 20,
+        flexDirection: 'row',
 
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+        alignItems: 'center',
+
+        paddingHorizontal: 7,
+    },
+
+    /*
+     * =====================================================
+     * CARÁTULA
+     * =====================================================
+     */
+
+    artworkOuter: {
+        width: 60,
+        height: 60,
+
+        borderRadius: 18,
+
+        alignItems: 'center',
+        justifyContent: 'center',
 
         backgroundColor:
-            'rgba(255,85,0,0.025)',
+            'rgba(255,255,255,0.035)',
+
+        borderWidth: 1,
+
+        borderColor:
+            'rgba(255,255,255,0.06)',
+
+        shadowColor: '#000',
+
+        shadowOffset: {
+            width: 0,
+            height: 5,
+        },
+
+        shadowOpacity: 0.45,
+
+        shadowRadius: 9,
+
+        elevation: 7,
     },
 
     artworkWrapper: {
-        width: 52,
-        height: 52,
+        width: 56,
+        height: 56,
 
-        borderRadius: 14,
+        borderRadius: 16,
 
         overflow: 'hidden',
 
-        backgroundColor: '#24252C',
-
-        borderWidth: 1,
-        borderColor:
-            'rgba(255,255,255,0.14)',
-
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.4,
-        shadowRadius: 7,
-        elevation: 5,
+        backgroundColor: '#24252B',
     },
 
     artwork: {
@@ -222,8 +327,14 @@ const styles = StyleSheet.create({
         bottom: 0,
 
         backgroundColor:
-            'rgba(0,0,0,0.06)',
+            'rgba(0,0,0,0.025)',
     },
+
+    /*
+     * =====================================================
+     * INFORMACIÓN
+     * =====================================================
+     */
 
     infoContainer: {
         flex: 1,
@@ -231,74 +342,119 @@ const styles = StyleSheet.create({
         minWidth: 0,
 
         marginLeft: 13,
+
         marginRight: 10,
+
+        justifyContent: 'center',
     },
 
-    title: {
-        color: '#FFFFFF',
-
-        fontSize: 14,
-
-        fontWeight: '700',
-
-        letterSpacing: -0.1,
-    },
-
-    artistRow: {
+    /*
+     * Estado.
+     */
+    statusRow: {
         flexDirection: 'row',
 
         alignItems: 'center',
 
-        marginTop: 5,
+        height: 13,
+
+        marginBottom: 2,
     },
 
-    artistDot: {
+    statusDot: {
         width: 5,
         height: 5,
 
-        borderRadius: 3,
+        borderRadius: 2.5,
 
-        backgroundColor: COLORS.primary,
+        backgroundColor:
+            COLORS.primary,
 
-        marginRight: 6,
+        marginRight: 5,
     },
 
-    artist: {
-        flex: 1,
-
+    statusText: {
         color:
-            'rgba(255,255,255,0.55)',
+            'rgba(255,255,255,0.43)',
+
+        fontSize: 8,
+
+        fontWeight: '800',
+
+        letterSpacing: 1.1,
+    },
+
+    statusTextPaused: {
+        color:
+            'rgba(255,255,255,0.27)',
+
+        fontSize: 8,
+
+        fontWeight: '700',
+
+        letterSpacing: 1.1,
+    },
+
+    /*
+     * Título.
+     */
+    title: {
+        color: '#FFFFFF',
+
+        fontSize: 15,
+
+        fontWeight: '800',
+
+        letterSpacing: -0.35,
+
+        lineHeight: 18,
+    },
+
+    /*
+     * Artista.
+     */
+    artist: {
+        color:
+            'rgba(255,255,255,0.48)',
 
         fontSize: 11,
 
         fontWeight: '500',
 
-        letterSpacing: 0.1,
+        marginTop: 2,
+
+        letterSpacing: 0,
     },
 
-    playButton: {
-        width: 46,
-        height: 46,
+    /*
+     * =====================================================
+     * BOTÓN
+     * =====================================================
+     */
 
-        borderRadius: 23,
+    playButton: {
+        width: 50,
+        height: 50,
+
+        borderRadius: 25,
 
         alignItems: 'center',
         justifyContent: 'center',
 
         backgroundColor:
-            'rgba(255,255,255,0.075)',
+            'rgba(255,255,255,0.045)',
 
         borderWidth: 1,
 
         borderColor:
-            'rgba(255,255,255,0.13)',
+            'rgba(255,255,255,0.075)',
     },
 
     playButtonInner: {
-        width: 38,
-        height: 38,
+        width: 39,
+        height: 39,
 
-        borderRadius: 19,
+        borderRadius: 19.5,
 
         alignItems: 'center',
         justifyContent: 'center',
@@ -314,18 +470,20 @@ const styles = StyleSheet.create({
             height: 4,
         },
 
-        shadowOpacity: 0.32,
-        shadowRadius: 7,
+        shadowOpacity: 0.38,
 
-        elevation: 7,
+        shadowRadius: 9,
+
+        elevation: 9,
     },
 
     playIcon: {
         color: '#FFFFFF',
 
-        fontSize: 13,
+        fontSize: 11,
+
+        fontWeight: '900',
 
         marginLeft: 1,
     },
 });
-

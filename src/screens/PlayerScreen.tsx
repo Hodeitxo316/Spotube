@@ -185,12 +185,12 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
     const trackDuration =
       typeof activeTrack.duration === 'number' &&
-      Number.isFinite(activeTrack.duration) &&
-      activeTrack.duration > 0
+        Number.isFinite(activeTrack.duration) &&
+        activeTrack.duration > 0
         ? activeTrack.duration
         : (
           Number.isFinite(duration) &&
-          duration > 0
+            duration > 0
             ? duration
             : 0
         );
@@ -511,7 +511,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         const progress =
           Math.min(
             Math.abs(dx) /
-              SCREEN_WIDTH,
+            SCREEN_WIDTH,
             1
           );
 
@@ -798,7 +798,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     if (
       swipePreviewTrack &&
       activeTrack.id ===
-        swipePreviewTrack.id
+      swipePreviewTrack.id
     ) {
       setSwipePreviewTrack(null);
 
@@ -860,17 +860,15 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       return;
     }
 
-    if (
-      !waitingForNewTrackPosition.current
-    ) {
+    if (!waitingForNewTrackPosition.current) {
       return;
     }
 
     if (position <= 0.25) {
-      waitingForNewTrackPosition.current =
-        false;
+      waitingForNewTrackPosition.current = false;
 
       setTrackPositionOverride(null);
+      setVisualSeekPosition(null);
     }
   }, [
     position,
@@ -882,7 +880,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       !activeTrack ||
       skipStartTime.current === null ||
       skipTrackId.current !==
-        activeTrack.id
+      activeTrack.id
     ) {
       return;
     }
@@ -1029,8 +1027,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             const nextIndex =
               shuffleOrderRef
                 .current[
-                shufflePositionRef
-                  .current
+              shufflePositionRef
+                .current
               ];
 
             nextTrack =
@@ -1099,7 +1097,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     const difference =
       Math.abs(
         position -
-          visualSeekPosition
+        visualSeekPosition
       );
 
     if (
@@ -1141,16 +1139,16 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       const j =
         Math.floor(
           Math.random() *
-            (i + 1)
+          (i + 1)
         );
 
       [
         remaining[i],
         remaining[j],
       ] = [
-        remaining[j],
-        remaining[i],
-      ];
+          remaining[j],
+          remaining[i],
+        ];
     }
 
     shuffleOrderRef.current =
@@ -1211,11 +1209,10 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         safeSecs % 60
       );
 
-    return `${mins}:${
-      remainder < 10
-        ? '0'
-        : ''
-    }${remainder}`;
+    return `${mins}:${remainder < 10
+      ? '0'
+      : ''
+      }${remainder}`;
   };
 
   const calculateSeekPosition = (
@@ -1251,7 +1248,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       Math.min(
         currentDuration,
         percentage *
-          currentDuration
+        currentDuration
       )
     );
   };
@@ -1308,7 +1305,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             shuffleOrderRef
               .current
               .length !==
-              queue.length ||
+            queue.length ||
             !shuffleOrderRef.current.includes(
               currentIndex
             )
@@ -1342,8 +1339,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
           const nextIndex =
             shuffleOrderRef
               .current[
-              shufflePositionRef
-                .current
+            shufflePositionRef
+              .current
             ];
 
           const nextTrack =
@@ -1508,34 +1505,34 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
    */
 
   const displayedPosition =
-    Math.max(
-      0,
-      Math.min(
-        duration > 0
-          ? duration
-          : Number.MAX_SAFE_INTEGER,
-        trackPositionOverride !==
-          null
-          ? trackPositionOverride
-          : visualSeekPosition !==
-            null
-            ? visualSeekPosition
-            : position
-      )
-    );
+    waitingForNewTrackPosition.current
+      ? 0
+      : Math.max(
+        0,
+        Math.min(
+          duration > 0
+            ? duration
+            : Number.MAX_SAFE_INTEGER,
+          trackPositionOverride !== null
+            ? trackPositionOverride
+            : visualSeekPosition !== null
+              ? visualSeekPosition
+              : position
+        )
+      );
 
   const progressPercentage =
     duration > 0
       ? Math.max(
-          0,
-          Math.min(
-            100,
-            (
-              displayedPosition /
-              duration
-            ) * 100
-          )
+        0,
+        Math.min(
+          100,
+          (
+            displayedPosition /
+            duration
+          ) * 100
         )
+      )
       : 0;
 
   useEffect(() => {
@@ -1613,7 +1610,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             style={[
               styles.pillButton,
               showLyrics &&
-                styles.pillButtonLyrics,
+              styles.pillButtonLyrics,
             ]}
             onPress={() => {
               setShowLyrics(
@@ -1979,9 +1976,9 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
                       if (
                         currentIndex !==
-                          -1 &&
+                        -1 &&
                         queue.length >
-                          1
+                        1
                       ) {
                         createShuffleOrder(
                           queue.length,
@@ -2044,8 +2041,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   playing
                     ? {}
                     : {
-                        marginLeft: 4,
-                      }
+                      marginLeft: 4,
+                    }
                 }
               />
             </TouchableOpacity>
@@ -2081,7 +2078,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   size={22}
                   color={
                     repeatMode ===
-                    'off'
+                      'off'
                       ? '#FFF'
                       : COLORS.primary
                   }
@@ -2089,14 +2086,14 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
                 {repeatMode ===
                   'one' && (
-                  <Text
-                    style={
-                      styles.repeatOne
-                    }
-                  >
-                    1
-                  </Text>
-                )}
+                    <Text
+                      style={
+                        styles.repeatOne
+                      }
+                    >
+                      1
+                    </Text>
+                  )}
               </View>
             </TouchableOpacity>
           </View>
@@ -2137,7 +2134,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         style={[
           styles.overlay,
           showLyrics &&
-            styles.lyricsOverlay,
+          styles.lyricsOverlay,
         ]}
         pointerEvents="none"
       />
@@ -2225,7 +2222,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
               style={[
                 styles.overlay,
                 showLyrics &&
-                  styles.lyricsOverlay,
+                styles.lyricsOverlay,
               ]}
             />
 
@@ -2456,7 +2453,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 22,
     paddingTop: 34,
-    paddingBottom: 38,
+    paddingBottom: 60,
     justifyContent: 'space-between',
   },
 

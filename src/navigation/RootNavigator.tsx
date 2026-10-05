@@ -72,9 +72,9 @@ const Stack =
 
 type TabIconProps = {
   name:
-    | 'home'
-    | 'search'
-    | 'book';
+  | 'home'
+  | 'search'
+  | 'book';
 
   color: string;
 
@@ -162,7 +162,7 @@ const TabIcon = ({
               animatedBackground,
           },
           focused &&
-            styles.tabIconContainerActive,
+          styles.tabIconContainerActive,
         ]}
       />
 
@@ -235,7 +235,7 @@ const TabNavigator = () => {
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '700',
-          marginTop: 4,
+          marginTop: 10,
           marginBottom: 0,
         },
 
@@ -248,37 +248,27 @@ const TabNavigator = () => {
         tabBarStyle: {
           position: 'absolute',
 
-          left: 14,
-          right: 14,
+          left: 0,
+          right: 0,
+          bottom: 0,
 
-          bottom:
-            Math.max(
-              insets.bottom,
-              8
-            ) + 8,
+          height: 72 + Math.max(insets.bottom, 0),
 
-          height: 72,
+          backgroundColor: '#171717',
 
-          backgroundColor:
-            '#171717',
+          borderTopWidth: 1,
+          borderTopColor: '#292929',
 
-          borderWidth: 1,
-          borderColor:
-            '#292929',
-
-          borderRadius: 22,
+          borderRadius: 0,
 
           paddingTop: 4,
-          paddingBottom: 3,
+          paddingBottom: Math.max(insets.bottom, 0),
 
           zIndex: 200,
           elevation: 20,
 
-          shadowColor:
-            '#000000',
-
+          shadowColor: '#000000',
           shadowOpacity: 0.5,
-
           shadowRadius: 20,
 
           shadowOffset: {
@@ -286,6 +276,15 @@ const TabNavigator = () => {
             height: 10,
           },
         },
+
+        tabBarBackground: () => (
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: '#171717',
+            }}
+          />
+        ),
 
         tabBarIcon: ({
           color,
@@ -346,6 +345,21 @@ const TabNavigator = () => {
   );
 };
 
+const getActiveRouteName = (
+  state: any
+): string => {
+  const route =
+    state.routes[state.index];
+
+  if (route.state) {
+    return getActiveRouteName(
+      route.state
+    );
+  }
+
+  return route.name;
+};
+
 /* -------------------------------------------------------------------------- */
 /* ROOT NAVIGATOR                                                              */
 /* -------------------------------------------------------------------------- */
@@ -355,6 +369,11 @@ export const RootNavigator = () => {
     isPlayerModalVisible,
     setPlayerModalVisible,
   ] = useState(false);
+
+  const [
+    activeRouteName,
+    setActiveRouteName,
+  ] = useState('Main');
 
   /*
    * El historial se inicializa una sola vez
@@ -372,7 +391,17 @@ export const RootNavigator = () => {
   }, []);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      onStateChange={(state) => {
+        if (!state) {
+          return;
+        }
+
+        setActiveRouteName(
+          getActiveRouteName(state)
+        );
+      }}
+    >
       <View
         style={styles.wrapper}
       >
@@ -399,6 +428,12 @@ export const RootNavigator = () => {
 
         {/* MiniPlayer flotante persistente */}
         <MiniPlayer
+          isArtistScreen={
+            activeRouteName === 'Artist'
+          }
+          isAlbumScreen={
+            activeRouteName === 'Album'
+          }
           onPressExpand={() =>
             setPlayerModalVisible(true)
           }
@@ -498,7 +533,7 @@ const styles = StyleSheet.create({
   activeIndicator: {
     position: 'absolute',
 
-    bottom: -3,
+    bottom: -5,
 
     width: 16,
     height: 3,

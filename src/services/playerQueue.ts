@@ -162,19 +162,15 @@ export const prepareAndAddTrack = async (
 };
 
 export const prepareNextTrack = async (): Promise<void> => {
-    let nextIndex = currentIndex + 1;
+  let nextIndex = currentIndex + 1;
 
-    if (nextIndex >= currentQueue.length) {
-        nextIndex = 0;
-    }
+  if (nextIndex >= currentQueue.length) {
+    nextIndex = 0;
+  }
 
-    const nextTrack = currentQueue[nextIndex];
+  const nextTrack = currentQueue[nextIndex];
 
-    if (!nextTrack) {
-        return;
-    }
+  if (!nextTrack) return;
 
-    await prepareAndAddTrack(nextTrack);
-
-    currentIndex = nextIndex;
+  await prepareAndAddTrack(nextTrack);
 };

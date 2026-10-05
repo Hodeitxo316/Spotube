@@ -343,9 +343,13 @@ export const SearchScreen = () => {
         ? results
         : results.slice(1);
 
+      const queueIndex = queue.findIndex(
+        (track) => track.id === item.id
+      );
+
       setPlayerQueue(
         queue,
-        index
+        queueIndex
       );
 
       await playTrack(item);
@@ -1028,7 +1032,7 @@ const styles = StyleSheet.create({
   // LIST
   list: {
     paddingTop: 3,
-    paddingBottom: 45,
+    paddingBottom: 250,
   },
 
   songRow: {

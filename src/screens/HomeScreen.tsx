@@ -57,6 +57,10 @@ import {
 } from '../services/playTrack';
 
 import {
+    youtubeService,
+} from '../services/youtubeService';
+
+import {
     COLORS,
 } from '../constants/theme';
 
@@ -73,6 +77,8 @@ type ArtistSummary = {
     totalPlayCount: number;
     trackCount: number;
     topTrack?: TrackItem;
+    isCollaboration?: boolean;
+    monthlyListeners?: string;
 };
 
 type AlbumSummary = {
@@ -150,6 +156,67 @@ const normalizeKey = (
         .replace(/\s+/g, ' ');
 };
 
+/**
+ * Determina si el nombre guardado en el historial
+ * no representa un artista individual válido para
+ * la sección "Tus artistas".
+ */
+const isInvalidArtistName = (
+    name: string,
+): boolean => {
+    const normalized =
+        normalizeKey(name);
+
+    if (!normalized) {
+        return true;
+    }
+
+    const invalidNames = [
+        'archivo local',
+        'artista desconocido',
+        'unknown artist',
+        'desconocido',
+        'unknown',
+        'varios artistas',
+        'various artists',
+    ];
+
+    if (
+        invalidNames.includes(
+            normalized,
+        )
+    ) {
+        return true;
+    }
+
+    /*
+     * No queremos mostrar como artista individual
+     * cosas como:
+     *
+     * Quevedo & Bad Bunny
+     * Quevedo feat. ...
+     * Artista x Artista
+     */
+    const collaborationSeparators = [
+        ' & ',
+        ' feat. ',
+        ' feat ',
+        ' ft. ',
+        ' ft ',
+        ' x ',
+        ' con ',
+        ',',
+        '/',
+    ];
+
+    return collaborationSeparators.some(
+        separator =>
+            name
+                .toLowerCase()
+                .includes(separator),
+    );
+};
+
 const historyToTrack = (
     item: ListeningHistoryItem,
 ): TrackItem => {
@@ -203,51 +270,6 @@ const deduplicateTracks = (
 
         seen.add(track.id);
         result.push(track);
-    }
-
-    return result;
-};
-
-const diversifyTracks = (
-    tracks: TrackItem[],
-    limit: number,
-): TrackItem[] => {
-    const result: TrackItem[] = [];
-
-    const artistCounts =
-        new Map<string, number>();
-
-    for (const track of tracks) {
-        const artistKey =
-            normalizeKey(
-                safeText(
-                    track.artist,
-                    'unknown',
-                ),
-            );
-
-        const count =
-            artistCounts.get(
-                artistKey,
-            ) ?? 0;
-
-        if (count >= 2) {
-            continue;
-        }
-
-        artistCounts.set(
-            artistKey,
-            count + 1,
-        );
-
-        result.push(track);
-
-        if (
-            result.length >=
-            limit
-        ) {
-            break;
-        }
     }
 
     return result;
@@ -391,31 +413,24 @@ const ArtistArtwork = memo(
         size: number;
     }) => {
         /*
-         * Preferimos SIEMPRE la foto real del artista si existe.
+         * IMPORTANTE:
          *
-         * Si el historial antiguo no tiene artistThumbnail,
-         * utilizamos la portada de su canción principal como
-         * fallback visual. Así nunca queda un círculo vacío.
+         * Aquí SOLO utilizamos la foto real del artista
+         * obtenida desde YouTube Music.
+         *
+         * No usamos artist.artwork como fallback porque
+         * artist.artwork puede ser la portada de una canción.
          */
         const thumbnail =
             getArtwork(
                 artist.artistThumbnail,
             );
 
-        const fallbackArtwork =
-            getArtwork(
-                artist.artwork,
-            );
-
-        const source =
-            thumbnail ||
-            fallbackArtwork;
-
-        if (source) {
+        if (thumbnail) {
             return (
                 <Image
                     source={{
-                        uri: source,
+                        uri: thumbnail,
                     }}
                     style={{
                         width: size,
@@ -477,49 +492,61 @@ const FeaturedTrackCard = memo(
     }) => {
         return (
             <TouchableOpacity
-                activeOpacity={0.94}
+                activeOpacity={0.92}
                 onPress={onPress}
-                style={
-                    styles.heroCard
-                }
+                style={styles.heroCard}
                 accessibilityRole="button"
                 accessibilityLabel={`Reproducir ${track.title} de ${track.artist}`}
             >
                 <View
                     style={
-                        styles.heroBackground
+                        styles.heroGlow
+                    }
+                />
+
+                <View
+                    style={
+                        styles.heroArtworkContainer
                     }
                 >
                     <Artwork
                         uri={
                             track.artwork
                         }
-                        size={999}
-                        radius={0}
+                        size={156}
+                        radius={18}
                     />
 
                     <View
                         style={
-                            styles.heroDarkOverlay
+                            styles.heroArtworkShade
                         }
                     />
 
                     <View
                         style={
-                            styles.heroOrangeGlow
+                            styles.heroArtworkBadge
                         }
-                    />
+                    >
+                        <FontAwesome
+                            name="headphones"
+                            size={9}
+                            color="#FFFFFF"
+                        />
 
-                    <View
-                        style={
-                            styles.heroTopFade
-                        }
-                    />
+                        <Text
+                            style={
+                                styles.heroArtworkBadgeText
+                            }
+                        >
+                            #1
+                        </Text>
+                    </View>
                 </View>
 
                 <View
                     style={
-                        styles.heroContent
+                        styles.heroInfo
                     }
                 >
                     <View
@@ -544,66 +571,70 @@ const FeaturedTrackCard = memo(
 
                     <View
                         style={
-                            styles.heroBottom
+                            styles.heroTextBlock
                         }
                     >
+                        <Text
+                            style={
+                                styles.heroTitle
+                            }
+                            numberOfLines={2}
+                        >
+                            {safeText(
+                                track.title,
+                                'Canción',
+                            )}
+                        </Text>
+
+                        <Text
+                            style={
+                                styles.heroArtist
+                            }
+                            numberOfLines={1}
+                        >
+                            {safeText(
+                                track.artist,
+                                'Artista',
+                            )}
+                        </Text>
+
                         <View
                             style={
-                                styles.heroTextBlock
+                                styles.heroStats
                             }
                         >
-                            <Text
-                                style={
-                                    styles.heroTitle
-                                }
-                                numberOfLines={
-                                    2
-                                }
-                            >
-                                {safeText(
-                                    track.title,
-                                    'Canción',
-                                )}
-                            </Text>
+                            <FontAwesome
+                                name="headphones"
+                                size={9}
+                                color="#858585"
+                            />
 
                             <Text
                                 style={
-                                    styles.heroArtist
+                                    styles.heroStatsText
                                 }
-                                numberOfLines={
+                            >
+                                {playCount}{' '}
+                                {playCount ===
                                     1
-                                }
-                            >
-                                {safeText(
-                                    track.artist,
-                                    'Artista',
-                                )}
+                                    ? 'reproducción'
+                                    : 'reproducciones'}
                             </Text>
-
-                            <View
-                                style={
-                                    styles.heroStats
-                                }
-                            >
-                                <FontAwesome
-                                    name="headphones"
-                                    size={10}
-                                    color="#D0D0D0"
-                                />
-
-                                <Text
-                                    style={
-                                        styles.heroStatsText
-                                    }
-                                >
-                                    {playCount}{' '}
-                                    {playCount ===
-                                        1
-                                        ? 'reproducción'
-                                        : 'reproducciones'}
-                                </Text>
-                            </View>
                         </View>
+                    </View>
+
+                    <View
+                        style={
+                            styles.heroBottomRow
+                        }
+                    >
+                        <Text
+                            style={
+                                styles.heroHint
+                            }
+                        >
+                            Tu canción más escuchada
+                        </Text>
 
                         <View
                             style={
@@ -612,7 +643,7 @@ const FeaturedTrackCard = memo(
                         >
                             <FontAwesome
                                 name="play"
-                                size={18}
+                                size={15}
                                 color="#FFFFFF"
                             />
                         </View>
@@ -744,9 +775,11 @@ const ArtistCard = memo(
     ({
         artist,
         onPress,
+        showPlays = true,
     }: {
         artist: ArtistSummary;
         onPress?: () => void;
+        showPlays?: boolean;
     }) => {
         const content = (
             <>
@@ -762,7 +795,7 @@ const ArtistCard = memo(
                     >
                         <ArtistArtwork
                             artist={artist}
-                            size={116}
+                            size={108}
                         />
                     </View>
                 </View>
@@ -776,16 +809,6 @@ const ArtistCard = memo(
                     {artist.name}
                 </Text>
 
-                <Text
-                    style={
-                        styles.artistPlays
-                    }
-                >
-                    {artist.totalPlayCount}{' '}
-                    {artist.totalPlayCount === 1
-                        ? 'reproducción'
-                        : 'reproducciones'}
-                </Text>
             </>
         );
 
@@ -1057,11 +1080,13 @@ const ArtistSectionList = memo(
     ({
         artists,
         onOpenArtist,
+        showPlays = true,
     }: {
         artists: ArtistSummary[];
         onOpenArtist: (
             artist: ArtistSummary,
         ) => void;
+        showPlays?: boolean;
     }) => {
         return (
             <FlatList<ArtistSummary>
@@ -1084,6 +1109,9 @@ const ArtistSectionList = memo(
                 }) => (
                     <ArtistCard
                         artist={item}
+                        showPlays={
+                            showPlays
+                        }
                         onPress={
                             item.artistId
                                 ? () =>
@@ -1124,27 +1152,18 @@ const AlbumSectionList = memo(
             <FlatList<AlbumSummary>
                 data={albums}
                 horizontal
-                showsHorizontalScrollIndicator={
-                    false
-                }
-                keyExtractor={(
-                    item,
-                    index,
-                ) =>
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item, index) =>
                     `album-${item.id}-${index}`
                 }
                 contentContainerStyle={
                     styles.horizontalContent
                 }
-                renderItem={({
-                    item,
-                }) => (
+                renderItem={({ item }) => (
                     <AlbumCard
                         album={item}
                         onPress={() =>
-                            onOpenAlbum(
-                                item,
-                            )
+                            onOpenAlbum(item)
                         }
                     />
                 )}
@@ -1156,7 +1175,6 @@ const AlbumSectionList = memo(
         );
     },
 );
-
 AlbumSectionList.displayName =
     'AlbumSectionList';
 
@@ -1307,6 +1325,7 @@ const HomeSectionView = memo(
                         onOpenArtist={
                             onOpenArtist
                         }
+                        showPlays={true}
                     />
                 ) : null}
 
@@ -1436,13 +1455,6 @@ export const HomeScreen = () => {
 
     const recentlyPlayed =
         useMemo(() => {
-            /*
-             * IMPORTANTE:
-             *
-             * No reconstruimos esto manualmente.
-             * listeningHistory ya sabe ordenar por
-             * lastPlayed correctamente.
-             */
             return getRecentlyPlayedTracks(
                 12,
             )
@@ -1450,45 +1462,12 @@ export const HomeScreen = () => {
                     historyToTrack,
                 )
                 .filter(
-                    (track) =>
+                    track =>
                         Boolean(
                             track.id,
                         ),
                 );
         }, [history]);
-
-    /* ---------------------------------------------------------------------- */
-    /* MOST PLAYED                                                             */
-    /* ---------------------------------------------------------------------- */
-
-    const mostPlayed =
-        useMemo(() => {
-            /*
-             * Utilizamos directamente la API oficial
-             * del servicio de historial.
-             *
-             * Así:
-             *
-             * 1. playCount DESC
-             * 2. lastPlayed DESC
-             */
-            const tracks =
-                getMostPlayedTracks(
-                    30,
-                ).map(
-                    historyToTrack,
-                );
-
-            /*
-             * Para la sección "Más escuchadas"
-             * exigimos que exista al menos una
-             * repetición real.
-             */
-            return diversifyTracks(
-                tracks,
-                12,
-            );
-        }, [history, playCounts]);
 
     /* ---------------------------------------------------------------------- */
     /* NUMBER ONE                                                              */
@@ -1522,7 +1501,7 @@ export const HomeScreen = () => {
     /* TOP ARTISTS                                                             */
     /* ---------------------------------------------------------------------- */
 
-    const artistSummaries =
+    const artistBaseSummaries =
         useMemo<ArtistSummary[]>(
             () => {
                 const summaries =
@@ -1532,9 +1511,7 @@ export const HomeScreen = () => {
 
                 return summaries
                     .filter(
-                        (
-                            artist,
-                        ) =>
+                        artist =>
                             artist.totalPlayCount >
                             0,
                     )
@@ -1550,9 +1527,10 @@ export const HomeScreen = () => {
                                     : undefined;
 
                             /*
-                             * Si no existe artistThumbnail,
-                             * usamos la portada de la canción
-                             * principal como fallback.
+                             * Este artwork se mantiene como
+                             * información interna/fallback,
+                             * pero ArtistArtwork NO lo utilizará
+                             * como foto del artista.
                              */
                             const artwork =
                                 getArtwork(
@@ -1618,6 +1596,611 @@ export const HomeScreen = () => {
         );
 
     /* ---------------------------------------------------------------------- */
+    /* REAL ARTIST DATA                                                       */
+    /* ---------------------------------------------------------------------- */
+
+    /*
+     * Aquí guardamos los artistas reales encontrados
+     * en YouTube Music.
+     *
+     * La clave del Map es el artista del historial.
+     * El contenido contiene:
+     *
+     * - id real de YouTube Music
+     * - nombre real
+     * - thumbnail real del artista
+     */
+    const [
+        realArtistData,
+        setRealArtistData,
+    ] = useState<
+        Map<
+            string,
+            {
+                id: string;
+                name: string;
+                thumbnail: string;
+                monthlyListeners?: string;
+            }
+        >
+    >(new Map());
+
+    const [collaborationArtists, setCollaborationArtists] =
+        useState<ArtistSummary[]>([]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const enrichArtists = async () => {
+            const nextMap =
+                new Map<
+                    string,
+                    {
+                        id: string;
+                        name: string;
+                        thumbnail: string;
+                    }
+                >();
+
+            const validArtists =
+                artistBaseSummaries.filter(
+                    artist =>
+                        !isInvalidArtistName(
+                            artist.name,
+                        ),
+                );
+
+            for (
+                const artist of validArtists
+            ) {
+                if (
+                    !artist.name.trim()
+                ) {
+                    continue;
+                }
+
+                try {
+                    const result =
+                        await youtubeService.searchArtist(
+                            artist.name,
+                        );
+
+                    if (
+                        cancelled ||
+                        !result
+                    ) {
+                        continue;
+                    }
+
+                    /*
+                     * IMPORTANTE:
+                     * safeText necesita también el fallback.
+                     */
+                    const realArtistName =
+                        safeText(
+                            result.name,
+                            '',
+                        );
+
+                    if (
+                        !result.id ||
+                        !realArtistName
+                    ) {
+                        continue;
+                    }
+
+                    if (
+                        isInvalidArtistName(
+                            realArtistName,
+                        )
+                    ) {
+                        continue;
+                    }
+
+                    nextMap.set(
+                        artist.id,
+                        {
+                            id:
+                                result.id,
+
+                            name:
+                                realArtistName,
+
+                            thumbnail:
+                                result.thumbnail ||
+                                '',
+                        },
+                    );
+                } catch (error) {
+                    console.warn(
+                        `[Home] No se pudo buscar el artista "${artist.name}":`,
+                        error,
+                    );
+                }
+            }
+
+            if (!cancelled) {
+                setRealArtistData(
+                    nextMap,
+                );
+            }
+        };
+
+        if (
+            artistBaseSummaries.length >
+            0
+        ) {
+            enrichArtists();
+        } else {
+            setRealArtistData(
+                new Map(),
+            );
+        }
+
+        return () => {
+            cancelled = true;
+        };
+    }, [artistBaseSummaries]);
+
+    /*
+     * Solo mostramos artistas que hemos podido
+     * identificar realmente en YouTube Music.
+     */
+    const artistSummaries = useMemo<ArtistSummary[]>(() => {
+        const summaries: ArtistSummary[] = [];
+
+        for (const artist of artistBaseSummaries) {
+            if (isInvalidArtistName(artist.name)) {
+                continue;
+            }
+
+            const realArtist = realArtistData.get(artist.id);
+
+            if (!realArtist) {
+                continue;
+            }
+
+            summaries.push({
+                ...artist,
+                name: realArtist.name,
+                artistId: realArtist.id,
+                artistThumbnail: realArtist.thumbnail,
+                artwork: realArtist.thumbnail || '',
+            });
+        }
+
+        return summaries.slice(0, 12);
+    }, [artistBaseSummaries, realArtistData]);
+
+    /* ---------------------------------------------------------------------- */
+    /* ARTISTAS DE COLABORACIONES                                             */
+    /* ---------------------------------------------------------------------- */
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadCollaborationArtists =
+            async () => {
+                if (
+                    artistSummaries.length === 0
+                ) {
+                    setCollaborationArtists(
+                        [],
+                    );
+                    return;
+                }
+
+                try {
+                    const collaboratorNames: string[] =
+                        [];
+
+                    /*
+                     * Analizamos solamente los 5 artistas
+                     * principales del historial.
+                     *
+                     * Así evitamos lanzar muchísimas
+                     * búsquedas contra YouTube Music.
+                     */
+                    const artistsToAnalyze =
+                        artistSummaries.slice(
+                            0,
+                            5,
+                        );
+
+                    for (
+                        const artist of artistsToAnalyze
+                    ) {
+                        if (
+                            !artist.name.trim()
+                        ) {
+                            continue;
+                        }
+
+                        const collaborators =
+                            await youtubeService.searchCollaboratingArtists(
+                                artist.name,
+                            );
+
+                        if (cancelled) {
+                            return;
+                        }
+
+                        for (
+                            const collaborator of collaborators
+                        ) {
+                            const normalizedCollaborator =
+                                normalizeKey(
+                                    collaborator,
+                                );
+
+                            if (
+                                !normalizedCollaborator ||
+                                isInvalidArtistName(
+                                    collaborator,
+                                )
+                            ) {
+                                continue;
+                            }
+
+                            /*
+                             * No añadir un artista que
+                             * ya aparece en "Tus artistas".
+                             */
+                            const alreadyExists =
+                                artistSummaries.some(
+                                    existing =>
+                                        normalizeKey(
+                                            existing.name,
+                                        ) ===
+                                        normalizedCollaborator,
+                                );
+
+                            if (
+                                alreadyExists
+                            ) {
+                                continue;
+                            }
+
+                            /*
+                             * Tampoco repetir colaboradores.
+                             */
+                            const alreadyAdded =
+                                collaboratorNames.some(
+                                    existing =>
+                                        normalizeKey(
+                                            existing,
+                                        ) ===
+                                        normalizedCollaborator,
+                                );
+
+                            if (
+                                alreadyAdded
+                            ) {
+                                continue;
+                            }
+
+                            collaboratorNames.push(
+                                collaborator,
+                            );
+
+                            /*
+                             * Nos quedamos con un máximo
+                             * de 6 candidatos.
+                             */
+                            if (
+                                collaboratorNames.length >=
+                                6
+                            ) {
+                                break;
+                            }
+                        }
+
+                        if (
+                            collaboratorNames.length >=
+                            6
+                        ) {
+                            break;
+                        }
+                    }
+
+                    if (cancelled) {
+                        return;
+                    }
+
+                    const enrichedCollaborators: ArtistSummary[] =
+                        [];
+
+                    /*
+                     * Ahora validamos cada candidato
+                     * buscando su artista REAL en
+                     * YouTube Music.
+                     */
+                    for (
+                        const collaboratorName of collaboratorNames
+                    ) {
+                        if (cancelled) {
+                            return;
+                        }
+
+                        try {
+                            const result =
+                                await youtubeService.searchArtist(
+                                    collaboratorName,
+                                );
+
+                            if (
+                                !result?.id ||
+                                !result.name
+                            ) {
+                                continue;
+                            }
+
+                            if (
+                                isInvalidArtistName(
+                                    result.name,
+                                )
+                            ) {
+                                continue;
+                            }
+
+                            const normalizedResultName =
+                                normalizeKey(
+                                    result.name,
+                                );
+
+                            /*
+                             * No añadir si ya tenemos ese
+                             * artista en "Tus artistas".
+                             */
+                            const alreadyExists =
+                                artistSummaries.some(
+                                    existing =>
+                                        normalizeKey(
+                                            existing.name,
+                                        ) ===
+                                        normalizedResultName,
+                                );
+
+                            if (
+                                alreadyExists
+                            ) {
+                                continue;
+                            }
+
+                            /*
+                             * No duplicar colaboradores.
+                             */
+                            const alreadyAdded =
+                                enrichedCollaborators.some(
+                                    existing =>
+                                        normalizeKey(
+                                            existing.name,
+                                        ) ===
+                                        normalizedResultName,
+                                );
+
+                            if (
+                                alreadyAdded
+                            ) {
+                                continue;
+                            }
+
+                            enrichedCollaborators.push({
+                                id:
+                                    `collaboration-${result.id}`,
+
+                                name:
+                                    result.name,
+
+                                artwork:
+                                    result.thumbnail ||
+                                    '',
+
+                                artistId:
+                                    result.id,
+
+                                artistThumbnail:
+                                    result.thumbnail ||
+                                    '',
+
+                                totalPlayCount:
+                                    0,
+
+                                trackCount:
+                                    0,
+
+                                topTrack:
+                                    undefined,
+
+                                isCollaboration:
+                                    true,
+                            });
+
+                            if (
+                                enrichedCollaborators.length >=
+                                6
+                            ) {
+                                break;
+                            }
+                        } catch (error) {
+                            console.warn(
+                                `[Home] No se pudo validar el colaborador "${collaboratorName}":`,
+                                error,
+                            );
+                        }
+                    }
+
+                    if (!cancelled) {
+                        setCollaborationArtists(
+                            enrichedCollaborators,
+                        );
+                    }
+                } catch (error) {
+                    console.warn(
+                        '[Home] Error cargando artistas de colaboraciones:',
+                        error,
+                    );
+
+                    if (!cancelled) {
+                        setCollaborationArtists(
+                            [],
+                        );
+                    }
+                }
+            };
+
+        loadCollaborationArtists();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [artistSummaries]);
+
+    const allArtistCards =
+        useMemo<ArtistSummary[]>(
+            () => {
+                return [
+                    ...artistSummaries,
+                    ...collaborationArtists,
+                ].slice(0, 12);
+            },
+            [
+                artistSummaries,
+                collaborationArtists,
+            ],
+        );
+
+
+    /* ---------------------------------------------------------------------- */
+    /* BECAUSE YOU LISTENED TO                                                */
+    /* ---------------------------------------------------------------------- */
+
+    const topArtistForRecommendations =
+        artistSummaries[0];
+
+    const [
+        becauseArtistTracks,
+        setBecauseArtistTracks,
+    ] = useState<TrackItem[]>(
+        [],
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadBecauseArtistTracks =
+            async () => {
+                if (
+                    !topArtistForRecommendations?.name
+                ) {
+                    setBecauseArtistTracks(
+                        [],
+                    );
+
+                    return;
+                }
+
+                try {
+                    /*
+                     * Buscamos canciones utilizando
+                     * el artista que realmente hemos
+                     * identificado en YouTube Music.
+                     */
+                    const results =
+                        await youtubeService.searchTracks(
+                            topArtistForRecommendations.name,
+                        );
+
+                    if (cancelled) {
+                        return;
+                    }
+
+                    const artistName =
+                        normalizeKey(
+                            topArtistForRecommendations.name,
+                        );
+
+                    /*
+                     * Solo aceptamos canciones cuyo
+                     * artista tenga relación directa
+                     * con el artista principal.
+                     *
+                     * Esto permite cosas como:
+                     *
+                     * Quevedo
+                     * Quevedo - Topic
+                     * Quevedo, ...
+                     * Quevedo feat. ...
+                     */
+                    const filtered =
+                        results.filter(
+                            track => {
+                                if (
+                                    !track?.id ||
+                                    !track.title
+                                ) {
+                                    return false;
+                                }
+
+                                const trackArtist =
+                                    normalizeKey(
+                                        track.artist ||
+                                        '',
+                                    );
+
+                                if (
+                                    !trackArtist
+                                ) {
+                                    return false;
+                                }
+
+                                return (
+                                    trackArtist.includes(
+                                        artistName,
+                                    ) ||
+                                    artistName.includes(
+                                        trackArtist,
+                                    )
+                                );
+                            },
+                        );
+
+                    const uniqueTracks =
+                        deduplicateTracks(
+                            filtered,
+                        );
+
+                    setBecauseArtistTracks(
+                        uniqueTracks.slice(
+                            0,
+                            12,
+                        ),
+                    );
+                } catch (error) {
+                    console.warn(
+                        '[Home] Error cargando recomendaciones del artista:',
+                        error,
+                    );
+
+                    if (!cancelled) {
+                        setBecauseArtistTracks(
+                            [],
+                        );
+                    }
+                }
+            };
+
+        loadBecauseArtistTracks();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        topArtistForRecommendations?.artistId,
+        topArtistForRecommendations?.name,
+    ]);
+
+    /* ---------------------------------------------------------------------- */
     /* ALBUMS                                                                  */
     /* ---------------------------------------------------------------------- */
 
@@ -1634,17 +2217,10 @@ export const HomeScreen = () => {
                         (
                             album: ListeningAlbumSummary,
                         ) => {
-                            /*
-                             * Recuperamos todas las canciones
-                             * del historial pertenecientes a
-                             * este proyecto.
-                             */
                             const albumTracks =
                                 history
                                     .filter(
-                                        (
-                                            item,
-                                        ) => {
+                                        item => {
                                             if (
                                                 album.albumId &&
                                                 item.albumId
@@ -1743,9 +2319,7 @@ export const HomeScreen = () => {
                         },
                     )
                     .filter(
-                        (
-                            album,
-                        ) =>
+                        album =>
                             album.tracks.length >
                             0 &&
                             Boolean(
@@ -1765,9 +2339,7 @@ export const HomeScreen = () => {
             () => {
                 return albumSummaries
                     .filter(
-                        (
-                            album,
-                        ) =>
+                        album =>
                             !album.isEP,
                     )
                     .sort(
@@ -1801,9 +2373,7 @@ export const HomeScreen = () => {
             () => {
                 return albumSummaries
                     .filter(
-                        (
-                            album,
-                        ) =>
+                        album =>
                             album.isEP,
                     )
                     .sort(
@@ -1840,7 +2410,7 @@ export const HomeScreen = () => {
         useMemo(() => {
             return libraryTracks
                 .filter(
-                    (track) =>
+                    track =>
                         track.isFavorite,
                 )
                 .sort(
@@ -1849,7 +2419,7 @@ export const HomeScreen = () => {
                         a.addedAt,
                 )
                 .map(
-                    (track) => ({
+                    track => ({
                         id:
                             track.id,
 
@@ -1923,12 +2493,10 @@ export const HomeScreen = () => {
                 const result:
                     HomeSection[] = [];
 
-                /*
-                 * HERO
-                 *
-                 * Solo una sección utiliza
-                 * la tarjeta gigante.
-                 */
+                /* ---------------------------------------------------------- */
+                /* 1. TU NÚMERO UNO                                            */
+                /* ---------------------------------------------------------- */
+
                 if (
                     numberOne &&
                     numberOne.playCount > 0
@@ -1952,9 +2520,10 @@ export const HomeScreen = () => {
                     });
                 }
 
-                /*
-                 * RECIENTES
-                 */
+                /* ---------------------------------------------------------- */
+                /* 2. ESCUCHADO RECIENTEMENTE                                 */
+                /* ---------------------------------------------------------- */
+
                 if (
                     recentlyPlayed.length >
                     0
@@ -1977,11 +2546,12 @@ export const HomeScreen = () => {
                     });
                 }
 
-                /*
-                 * ARTISTAS
-                 */
+                /* ---------------------------------------------------------- */
+                /* 3. TUS ARTISTAS                                             */
+                /* ---------------------------------------------------------- */
+
                 if (
-                    artistSummaries.length >
+                    allArtistCards.length >
                     0
                 ) {
                     result.push({
@@ -1995,41 +2565,44 @@ export const HomeScreen = () => {
                             'Tus artistas',
 
                         subtitle:
-                            'Los artistas que más escuchas',
+                            'Los artistas que más escuchas y sus colaboraciones',
 
                         data:
-                            artistSummaries,
+                            allArtistCards,
                     });
                 }
 
-                /*
-                 * MÁS ESCUCHADAS
-                 */
+                /* ---------------------------------------------------------- */
+                /* 4. PORQUE HAS ESCUCHADO A...                                */
+                /* ---------------------------------------------------------- */
+
                 if (
-                    mostPlayed.length >
-                    0
+                    becauseArtistTracks.length >
+                    0 &&
+                    topArtistForRecommendations
                 ) {
                     result.push({
                         key:
-                            'most-played',
+                            'because-artist',
 
                         type:
                             'tracks',
 
                         title:
-                            'Más escuchadas',
+                            `Porque has escuchado a ${topArtistForRecommendations.name}`,
 
                         subtitle:
-                            'Las canciones que más vuelven a sonar',
+                            'Canciones de este artista que podrían gustarte',
 
                         data:
-                            mostPlayed,
+                            becauseArtistTracks,
                     });
                 }
 
-                /*
-                 * ÁLBUMES
-                 */
+                /* ---------------------------------------------------------- */
+                /* 5. ÁLBUMES                                                   */
+                /* ---------------------------------------------------------- */
+
                 if (
                     albums.length >
                     0
@@ -2052,9 +2625,10 @@ export const HomeScreen = () => {
                     });
                 }
 
-                /*
-                 * EPS
-                 */
+                /* ---------------------------------------------------------- */
+                /* 6. EPS                                                       */
+                /* ---------------------------------------------------------- */
+
                 if (
                     eps.length >
                     0
@@ -2077,9 +2651,10 @@ export const HomeScreen = () => {
                     });
                 }
 
-                /*
-                 * FAVORITOS
-                 */
+                /* ---------------------------------------------------------- */
+                /* 7. TUS FAVORITOS                                             */
+                /* ---------------------------------------------------------- */
+
                 if (
                     favoriteTracks.length >
                     0
@@ -2108,7 +2683,10 @@ export const HomeScreen = () => {
                 numberOne,
                 recentlyPlayed,
                 artistSummaries,
-                mostPlayed,
+                collaborationArtists,
+                allArtistCards,
+                topArtistForRecommendations,
+                becauseArtistTracks,
                 albums,
                 eps,
                 favoriteTracks,
@@ -2153,7 +2731,7 @@ export const HomeScreen = () => {
                     );
 
                     prepareNextTrack().catch(
-                        (error) => {
+                        error => {
                             console.warn(
                                 '[Home] No se pudo preparar la siguiente canción:',
                                 error,
@@ -2194,9 +2772,12 @@ export const HomeScreen = () => {
                         artistName:
                             artist.name,
 
+                        /*
+                         * Usamos la miniatura real
+                         * del artista.
+                         */
                         artistThumbnail:
                             artist.artistThumbnail ||
-                            artist.artwork ||
                             '',
                     },
                 );
@@ -2312,9 +2893,7 @@ export const HomeScreen = () => {
             >
                 <FlatList<HomeSection>
                     data={sections}
-                    keyExtractor={(
-                        item,
-                    ) =>
+                    keyExtractor={item =>
                         item.key
                     }
                     renderItem={
@@ -2501,7 +3080,7 @@ const styles = StyleSheet.create({
     },
 
     content: {
-        paddingBottom: 145,
+        paddingBottom: 250,
     },
 
     /* ---------------------------------------------------------------------- */
@@ -2609,8 +3188,8 @@ const styles = StyleSheet.create({
     /* ---------------------------------------------------------------------- */
 
     featuredSection: {
-        marginTop: 27,
-        marginBottom: 3,
+        marginTop: 25,
+        marginBottom: 2,
     },
 
     featuredHorizontal: {
@@ -2619,59 +3198,84 @@ const styles = StyleSheet.create({
 
     heroCard: {
         width: '100%',
-        height: 330,
-        borderRadius: 26,
+        height: 218,
+        borderRadius: 24,
         overflow: 'hidden',
         backgroundColor:
-            '#171717',
+            '#151515',
+        borderWidth: 1,
+        borderColor:
+            'rgba(255,255,255,0.07)',
         position: 'relative',
-        elevation: 10,
+        flexDirection: 'row',
+        padding: 15,
+        elevation: 9,
     },
 
-    heroBackground: {
+    heroGlow: {
         position: 'absolute',
-        top: 0,
+        width: 210,
+        height: 210,
+        borderRadius: 105,
+        right: -90,
+        bottom: -125,
+        backgroundColor:
+            'rgba(255,85,0,0.13)',
+    },
+
+    heroArtworkContainer: {
+        width: 156,
+        height: 156,
+        borderRadius: 18,
+        overflow: 'hidden',
+        backgroundColor:
+            '#1D1D1D',
+        position: 'relative',
+        alignSelf: 'center',
+        elevation: 8,
+    },
+
+    heroArtworkShade: {
+        position: 'absolute',
+        left: 0,
         right: 0,
         bottom: 0,
-        left: 0,
+        height: 65,
         backgroundColor:
-            '#171717',
+            'rgba(0,0,0,0.20)',
     },
 
-    heroDarkOverlay: {
+    heroArtworkBadge: {
         position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
+        left: 9,
+        top: 9,
+        height: 26,
+        minWidth: 38,
+        paddingHorizontal: 9,
+        borderRadius: 13,
         backgroundColor:
-            'rgba(0, 0, 0, 0.38)',
+            'rgba(0,0,0,0.68)',
+        borderWidth: 1,
+        borderColor:
+            'rgba(255,255,255,0.12)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
-    heroOrangeGlow: {
-        position: 'absolute',
-        left: -90,
-        bottom: -110,
-        width: 320,
-        height: 280,
-        borderRadius: 160,
-        backgroundColor:
-            'rgba(255, 85, 0, 0.24)',
+    heroArtworkBadgeText: {
+        color:
+            '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '900',
+        marginLeft: 5,
     },
 
-    heroTopFade: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        top: 0,
-        height: 170,
-        backgroundColor:
-            'rgba(0, 0, 0, 0.30)',
-    },
-
-    heroContent: {
+    heroInfo: {
         flex: 1,
-        padding: 20,
+        minWidth: 0,
+        marginLeft: 16,
+        paddingVertical: 2,
         justifyContent:
             'space-between',
     },
@@ -2680,60 +3284,52 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 11,
-        height: 28,
-        borderRadius: 14,
+        height: 25,
+        paddingHorizontal: 9,
+        borderRadius: 13,
         backgroundColor:
-            'rgba(0, 0, 0, 0.48)',
+            'rgba(255,85,0,0.10)',
         borderWidth: 1,
         borderColor:
-            'rgba(255, 255, 255, 0.10)',
+            'rgba(255,85,0,0.20)',
     },
 
     heroLiveDot: {
-        width: 6,
-        height: 6,
+        width: 5,
+        height: 5,
         borderRadius: 3,
         backgroundColor:
             COLORS.primary,
-        marginRight: 7,
+        marginRight: 6,
     },
 
     heroLabel: {
         color:
-            '#F2F2F2',
-        fontSize: 9,
+            '#E8E8E8',
+        fontSize: 8,
         fontWeight: '900',
         letterSpacing: 1,
     },
 
-    heroBottom: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        justifyContent:
-            'space-between',
-    },
-
     heroTextBlock: {
-        flex: 1,
-        minWidth: 0,
-        paddingRight: 16,
+        marginTop: 10,
+        paddingRight: 4,
     },
 
     heroTitle: {
         color:
             '#FFFFFF',
-        fontSize: 28,
-        lineHeight: 32,
+        fontSize: 22,
+        lineHeight: 26,
         fontWeight: '900',
-        letterSpacing: -0.8,
+        letterSpacing: -0.6,
     },
 
     heroArtist: {
         color:
-            '#D2D2D2',
-        fontSize: 14,
-        lineHeight: 19,
+            '#B5B5B5',
+        fontSize: 13,
+        lineHeight: 18,
         fontWeight: '600',
         marginTop: 5,
     },
@@ -2741,29 +3337,46 @@ const styles = StyleSheet.create({
     heroStats: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 10,
+        marginTop: 7,
     },
 
     heroStatsText: {
         color:
-            '#BDBDBD',
-        fontSize: 10,
+            '#777777',
+        fontSize: 9,
         fontWeight: '600',
-        marginLeft: 6,
+        marginLeft: 5,
+    },
+
+    heroBottomRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent:
+            'space-between',
+        marginTop: 8,
+    },
+
+    heroHint: {
+        color:
+            '#666666',
+        fontSize: 9,
+        fontWeight: '600',
+        flex: 1,
+        marginRight: 8,
     },
 
     heroPlay: {
-        width: 58,
-        height: 58,
-        borderRadius: 29,
+        width: 47,
+        height: 47,
+        borderRadius: 24,
         backgroundColor:
             COLORS.primary,
         alignItems: 'center',
         justifyContent:
             'center',
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 10,
+        elevation: 8,
+        shadowOpacity: 0.28,
+        shadowRadius: 8,
     },
 
     /* ---------------------------------------------------------------------- */
@@ -2903,30 +3516,30 @@ const styles = StyleSheet.create({
     /* ---------------------------------------------------------------------- */
 
     artistCard: {
-        width: 130,
+        width: 126,
         marginRight: 15,
         alignItems: 'center',
     },
 
     artistImageShadow: {
-        width: 122,
-        height: 122,
-        borderRadius: 61,
+        width: 114,
+        height: 114,
+        borderRadius: 57,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor:
-            '#171717',
+            '#151515',
         elevation: 8,
     },
 
     artistImageRing: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: 112,
+        height: 112,
+        borderRadius: 56,
         padding: 2,
         borderWidth: 1,
         borderColor:
-            'rgba(255, 255, 255, 0.12)',
+            'rgba(255,255,255,0.10)',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -2955,7 +3568,7 @@ const styles = StyleSheet.create({
         lineHeight: 17,
         fontWeight: '700',
         marginTop: 10,
-        width: 126,
+        width: 122,
         textAlign: 'center',
     },
 

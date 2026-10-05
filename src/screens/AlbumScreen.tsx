@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     },
 
     content: {
-        paddingBottom: 100,
+        paddingBottom: 200,
     },
 
     header: {
