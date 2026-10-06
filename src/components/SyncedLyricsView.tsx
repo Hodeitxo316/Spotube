@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 
 import {
@@ -14,9 +15,12 @@ import {
   StyleSheet,
   Animated,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 
 import { LyricLine } from '../utils/lrcParser';
+
+import TrackPlayer from 'react-native-track-player';
 
 interface SyncedLyricsViewProps {
   lyrics: LyricLine[];
@@ -127,15 +131,22 @@ const LyricRow = memo<LyricRowProps>(
           },
         ]}
       >
-        <Text
-          style={[
-            styles.lyricText,
-            isActive &&
-              styles.activeText,
-          ]}
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => {
+            TrackPlayer.seekTo(item.time);
+          }}
         >
-          {item.text}
-        </Text>
+          <Text
+            style={[
+              styles.lyricText,
+              isActive &&
+                styles.activeText,
+            ]}
+          >
+            {item.text}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     );
   }
@@ -153,6 +164,12 @@ export const SyncedLyricsView: React.FC<
 }) => {
   const flatListRef =
     useRef<FlatList<LyricLine>>(null);
+
+  const followLyricsRef =
+    useRef(true);
+
+  const [showReturnButton, setShowReturnButton] =
+    useState(false);
 
   /*
    * ============================================================
@@ -315,7 +332,8 @@ export const SyncedLyricsView: React.FC<
     if (
       activeIndex < 0 ||
       normalizedLyrics.length === 0 ||
-      !flatListRef.current
+      !flatListRef.current ||
+      !followLyricsRef.current
     ) {
       return;
     }
@@ -437,6 +455,10 @@ export const SyncedLyricsView: React.FC<
     <View style={styles.wrapper}>
       <FlatList
         ref={flatListRef}
+        onScrollBeginDrag={() => {
+          followLyricsRef.current = false;
+          setShowReturnButton(true);
+        }}
         data={normalizedLyrics}
         keyExtractor={(
           item,
@@ -523,6 +545,34 @@ export const SyncedLyricsView: React.FC<
           />
         )}
       />
+
+      {showReturnButton && (
+        <TouchableOpacity
+          style={styles.returnButton}
+          activeOpacity={0.8}
+          onPress={() => {
+            followLyricsRef.current = true;
+            setShowReturnButton(false);
+
+            if (activeIndex < 0) {
+              return;
+            }
+
+            lastScrolledIndexRef.current =
+              activeIndex;
+
+            flatListRef.current?.scrollToIndex({
+              index: activeIndex,
+              animated: true,
+              viewPosition: 0.42,
+            });
+          }}
+        >
+          <Text style={styles.returnButtonText}>
+            ↓  Volver a la letra actual
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -606,5 +656,21 @@ const styles =
       fontSize: 14,
       lineHeight: 21,
       textAlign: 'center',
+    },
+
+    returnButton: {
+      position: 'absolute',
+      bottom: 24,
+      alignSelf: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 22,
+      backgroundColor: 'rgba(255,255,255,0.14)',
+    },
+
+    returnButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
     },
   });

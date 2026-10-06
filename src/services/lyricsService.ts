@@ -8,9 +8,11 @@ import {
 const LRCLIB_BASE_URL =
   'https://lrclib.net/api';
 
-const REQUEST_TIMEOUT_MS = 8000;
-const RETRY_DELAY_MS = 1200;
-const MAX_RETRIES = 2;
+/*
+ * Una petición individual no debe bloquear demasiado
+ * el reproductor.
+ */
+const REQUEST_TIMEOUT_MS = 3500;
 
 interface LrcLibTrack {
   id?: number;
@@ -25,37 +27,23 @@ interface LrcLibTrack {
   syncedLyrics?: string | null;
 }
 
-const wait = (
-  milliseconds: number
-): Promise<void> => {
-  return new Promise(resolve => {
-    setTimeout(resolve, milliseconds);
-  });
-};
-
 const fetchJson = async <T>(
   url: string
 ): Promise<T | null> => {
-  let lastStatus: number | null = null;
+  try {
+    const controller =
+      new AbortController();
 
-  for (
-    let attempt = 0;
-    attempt <= MAX_RETRIES;
-    attempt++
-  ) {
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+    console.log(
+      '[LYRICS] Consultando LRCLIB:',
+      url
+    );
+
     try {
-      const controller =
-        new AbortController();
-
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, REQUEST_TIMEOUT_MS);
-
-      console.log(
-        '[LYRICS] Consultando LRCLIB:',
-        url
-      );
-
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -66,66 +54,28 @@ const fetchJson = async <T>(
         signal: controller.signal,
       });
 
+      if (!response.ok) {
+        console.warn(
+          '[LYRICS] LRCLIB respondió:',
+          response.status,
+          url
+        );
+
+        return null;
+      }
+
+      return (await response.json()) as T;
+    } finally {
       clearTimeout(timeoutId);
-
-      lastStatus = response.status;
-
-      if (response.ok) {
-        return (await response.json()) as T;
-      }
-
-      console.warn(
-        '[LYRICS] LRCLIB respondió:',
-        response.status,
-        url
-      );
-
-      /*
-       * 520 = el servidor/proxy intermedio no ha podido
-       * procesar correctamente la petición.
-       *
-       * En lugar de abandonar inmediatamente,
-       * hacemos un par de reintentos controlados.
-       */
-
-      if (
-        response.status === 520 &&
-        attempt < MAX_RETRIES
-      ) {
-        console.log(
-          `[LYRICS] 520 recibido. Reintentando (${attempt + 1}/${MAX_RETRIES})...`
-        );
-
-        await wait(RETRY_DELAY_MS);
-        continue;
-      }
-
-      return null;
-    } catch (error) {
-      console.warn(
-        '[LYRICS] Error consultando LRCLIB:',
-        error
-      );
-
-      if (attempt < MAX_RETRIES) {
-        console.log(
-          `[LYRICS] Reintentando petición (${attempt + 1}/${MAX_RETRIES})...`
-        );
-
-        await wait(RETRY_DELAY_MS);
-        continue;
-      }
-
-      return null;
     }
+  } catch (error) {
+    console.warn(
+      '[LYRICS] Error consultando LRCLIB:',
+      error
+    );
+
+    return null;
   }
-
-  console.warn(
-    '[LYRICS] Petición agotada. Último estado:',
-    lastStatus
-  );
-
-  return null;
 };
 
 const parseSyncedLyrics = (
@@ -138,15 +88,6 @@ const parseSyncedLyrics = (
   try {
     const parsedLyrics =
       parseLrc(syncedLyrics);
-
-    /*
-     * DEBUG:
-     * Mostramos los primeros timestamps que realmente
-     * devuelve LRCLIB después de pasar por nuestro parser.
-     *
-     * Esto nos permitirá saber si el desfase ya viene
-     * desde LRCLIB o aparece posteriormente en el reproductor.
-     */
 
     console.log(
       '[LYRICS] Primeros timestamps:',
@@ -187,21 +128,27 @@ const normalizeText = (
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\(\)\[\]\{\}]/g, ' ')
+    .replace(/[()\[\]{}]/g, ' ')
     .replace(/[-–—_/|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 };
 
-const titleMatches = (
-  resultTitle: string,
-  requestedTitle: string
-): boolean => {
-  const result =
-    normalizeText(resultTitle);
+const compactText = (
+  value?: string
+): string => {
+  return normalizeText(value)
+    .replace(/\b(feat|ft|featuring)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
 
-  const requested =
-    normalizeText(requestedTitle);
+const textMatches = (
+  resultValue: string,
+  requestedValue: string
+): boolean => {
+  const result = compactText(resultValue);
+  const requested = compactText(requestedValue);
 
   if (!result || !requested) {
     return false;
@@ -221,32 +168,85 @@ const titleMatches = (
   return false;
 };
 
-const artistMatches = (
-  resultArtist: string,
-  requestedArtist: string
-): boolean => {
-  const result =
-    normalizeText(resultArtist);
-
-  const requested =
-    normalizeText(requestedArtist);
-
-  if (!result || !requested) {
-    return false;
-  }
-
-  if (result === requested) {
-    return true;
-  }
-
+const durationDifference = (
+  track: LrcLibTrack,
+  requestedDuration: number
+): number => {
   if (
-    result.includes(requested) ||
-    requested.includes(result)
+    typeof track.duration !== 'number' ||
+    requestedDuration <= 0
   ) {
-    return true;
+    return Number.MAX_SAFE_INTEGER;
   }
 
-  return false;
+  return Math.abs(
+    track.duration - requestedDuration
+  );
+};
+
+const scoreCandidate = (
+  track: LrcLibTrack,
+  title: string,
+  artist: string,
+  duration: number
+): number => {
+  const resultTitle =
+    track.trackName || track.name || '';
+
+  const resultArtist =
+    track.artistName || '';
+
+  const titleMatch = textMatches(
+    resultTitle,
+    title
+  );
+
+  const artistMatch = textMatches(
+    resultArtist,
+    artist
+  );
+
+  if (!titleMatch) {
+    return -1;
+  }
+
+  let score = 0;
+
+  score += 60;
+
+  if (artistMatch) {
+    score += 60;
+  } else {
+    /*
+     * No aceptamos una canción de otro artista
+     * en una búsqueda normal.
+     */
+    return -1;
+  }
+
+  if (duration > 0) {
+    const difference =
+      durationDifference(
+        track,
+        duration
+      );
+
+    if (difference <= 2) {
+      score += 50;
+    } else if (difference <= 5) {
+      score += 25;
+    } else if (difference <= 10) {
+      score += 10;
+    } else {
+      /*
+       * Una diferencia grande suele indicar otra
+       * versión, remix, live o edición.
+       */
+      score -= 40;
+    }
+  }
+
+  return score;
 };
 
 const findBestCandidate = (
@@ -267,60 +267,56 @@ const findBestCandidate = (
     return null;
   }
 
-  /*
-   * Primero intentamos encontrar una coincidencia
-   * real de título + artista.
-   */
-
-  const matchingTitleAndArtist =
-    withLyrics.filter(track =>
-      titleMatches(
-        track.trackName ||
-          track.name ||
-          '',
-        title
-      ) &&
-      artistMatches(
-        track.artistName || '',
-        artist
-      )
+  const scored = withLyrics
+    .map(track => ({
+      track,
+      score: scoreCandidate(
+        track,
+        title,
+        artist,
+        duration
+      ),
+    }))
+    .filter(item => item.score >= 0)
+    .sort((a, b) =>
+      b.score - a.score
     );
 
-  const candidates =
-    matchingTitleAndArtist.length > 0
-      ? matchingTitleAndArtist
-      : withLyrics;
+  const best = scored[0];
 
-  /*
-   * Si tenemos duración, elegimos la versión cuya
-   * duración esté más cerca de la canción reproducida.
-   */
+  if (!best) {
+    return null;
+  }
 
-  const sorted = [...candidates].sort(
-    (a, b) => {
-      if (duration <= 0) {
-        return 0;
-      }
-
-      const durationA =
-        typeof a.duration === 'number'
-          ? Math.abs(
-              a.duration - duration
+  console.log(
+    '[LYRICS] 🎯 Mejor candidato:',
+    {
+      title:
+        best.track.trackName ||
+        best.track.name,
+      artist:
+        best.track.artistName,
+      album:
+        best.track.albumName,
+      duration:
+        best.track.duration,
+      requestedDuration: duration,
+      durationDifference:
+        duration > 0 &&
+        typeof best.track.duration ===
+          'number'
+          ? Number(
+              (
+                best.track.duration -
+                duration
+              ).toFixed(3)
             )
-          : Number.MAX_SAFE_INTEGER;
-
-      const durationB =
-        typeof b.duration === 'number'
-          ? Math.abs(
-              b.duration - duration
-            )
-          : Number.MAX_SAFE_INTEGER;
-
-      return durationA - durationB;
+          : null,
+      score: best.score,
     }
   );
 
-  return sorted[0] || null;
+  return best.track;
 };
 
 const buildApiUrl = (
@@ -331,53 +327,6 @@ const buildApiUrl = (
     new URLSearchParams(params);
 
   return `${LRCLIB_BASE_URL}/${endpoint}?${searchParams.toString()}`;
-};
-
-const logSelectedTrack = (
-  label: string,
-  track: LrcLibTrack | null,
-  requestedTitle: string,
-  requestedArtist: string,
-  requestedDuration: number
-): void => {
-  console.log(
-    `[LYRICS] 🎯 ${label}:`,
-    {
-      id: track?.id,
-      title:
-        track?.trackName ||
-        track?.name ||
-        null,
-      artist:
-        track?.artistName ||
-        null,
-      album:
-        track?.albumName ||
-        null,
-      duration:
-        track?.duration ??
-        null,
-      requestedTitle,
-      requestedArtist,
-      requestedDuration,
-      durationDifference:
-        typeof track?.duration === 'number' &&
-        requestedDuration > 0
-          ? Number(
-              (
-                track.duration -
-                requestedDuration
-              ).toFixed(3)
-            )
-          : null,
-      hasSyncedLyrics:
-        typeof track?.syncedLyrics ===
-          'string' &&
-        track.syncedLyrics.trim().length > 0,
-      hasWordSync:
-        track?.hasWordSync ?? false,
-    }
-  );
 };
 
 const getLyricsFromTrack = (
@@ -435,13 +384,11 @@ export const fetchSyncedLyrics = async (
 
   try {
     /*
-     * ==================================================
-     * 1. BÚSQUEDA EXACTA
-     * ==================================================
+     * 1. PRIMERA OPCIÓN: /get
      *
-     * Esta es la primera opción y la más precisa.
+     * Es la búsqueda más precisa de LRCLIB.
+     * La duración ayuda a distinguir versiones.
      */
-
     const exactParams: Record<
       string,
       string
@@ -455,35 +402,20 @@ export const fetchSyncedLyrics = async (
         safeDuration.toString();
     }
 
-    const exactUrl = buildApiUrl(
-      'get',
-      exactParams
-    );
-
     const exactTrack =
       await fetchJson<LrcLibTrack>(
-        exactUrl
+        buildApiUrl(
+          'get',
+          exactParams
+        )
       );
-
-    console.log(
-      '[LYRICS] Resultado exacto:',
-      exactTrack
-    );
-
-    logSelectedTrack(
-      'REGISTRO EXACTO',
-      exactTrack,
-      cleanTitle,
-      cleanArtist,
-      safeDuration
-    );
 
     const exactLyrics =
       getLyricsFromTrack(exactTrack);
 
     if (exactLyrics.length > 0) {
       console.log(
-        '[LYRICS] ✅ Letras encontradas mediante búsqueda exacta:',
+        '[LYRICS] ✅ Letras encontradas mediante /get:',
         exactLyrics.length
       );
 
@@ -491,34 +423,28 @@ export const fetchSyncedLyrics = async (
     }
 
     /*
-     * ==================================================
-     * 2. BÚSQUEDA POR TÍTULO + ARTISTA
-     * ==================================================
+     * 2. SEGUNDA OPCIÓN: /search
+     *
+     * Aquí no cogemos simplemente el primer resultado.
+     * Comparamos título + artista + duración.
      */
-
-    await wait(300);
-
-    const searchUrl = buildApiUrl(
-      'search',
-      {
-        track_name: cleanTitle,
-        artist_name: cleanArtist,
-      }
-    );
-
     const searchResults =
       await fetchJson<LrcLibTrack[]>(
-        searchUrl
+        buildApiUrl(
+          'search',
+          {
+            track_name: cleanTitle,
+            artist_name: cleanArtist,
+          }
+        )
       );
 
-    console.log(
-      '[LYRICS] Resultados búsqueda:',
-      Array.isArray(searchResults)
-        ? searchResults.length
-        : 0
-    );
-
     if (Array.isArray(searchResults)) {
+      console.log(
+        '[LYRICS] Resultados búsqueda:',
+        searchResults.length
+      );
+
       const bestCandidate =
         findBestCandidate(
           searchResults,
@@ -527,76 +453,37 @@ export const fetchSyncedLyrics = async (
           safeDuration
         );
 
-      logSelectedTrack(
-        'CANDIDATO FINAL TÍTULO + ARTISTA',
-        bestCandidate,
-        cleanTitle,
-        cleanArtist,
-        safeDuration
-      );
-
-      if (bestCandidate) {
-        console.log(
-          '[LYRICS] 🎵 Candidato encontrado:',
-          {
-            id: bestCandidate.id,
-            title:
-              bestCandidate.trackName ||
-              bestCandidate.name,
-            artist:
-              bestCandidate.artistName,
-            album:
-              bestCandidate.albumName,
-            duration:
-              bestCandidate.duration,
-          }
+      const lyrics =
+        getLyricsFromTrack(
+          bestCandidate
         );
 
-        const lyrics =
-          getLyricsFromTrack(
-            bestCandidate
-          );
+      if (lyrics.length > 0) {
+        console.log(
+          '[LYRICS] ✅ Letras encontradas mediante /search:',
+          lyrics.length
+        );
 
-        if (lyrics.length > 0) {
-          console.log(
-            '[LYRICS] ✅ Letras encontradas mediante búsqueda:',
-            lyrics.length
-          );
-
-          return lyrics;
-        }
+        return lyrics;
       }
     }
 
     /*
-     * ==================================================
-     * 3. BÚSQUEDA SOLO POR TÍTULO
-     * ==================================================
+     * 3. FALLBACK MUY CONTROLADO
      *
-     * Solo llegamos aquí si las anteriores no han
-     * encontrado letras.
+     * Solo buscamos por título si no hay otra opción,
+     * pero seguimos exigiendo que artista y duración
+     * coincidan antes de aceptar el resultado.
      */
-
-    await wait(300);
-
-    const titleUrl = buildApiUrl(
-      'search',
-      {
-        track_name: cleanTitle,
-      }
-    );
-
     const titleResults =
       await fetchJson<LrcLibTrack[]>(
-        titleUrl
+        buildApiUrl(
+          'search',
+          {
+            track_name: cleanTitle,
+          }
+        )
       );
-
-    console.log(
-      '[LYRICS] Resultados solo por título:',
-      Array.isArray(titleResults)
-        ? titleResults.length
-        : 0
-    );
 
     if (Array.isArray(titleResults)) {
       const bestTitleCandidate =
@@ -607,44 +494,18 @@ export const fetchSyncedLyrics = async (
           safeDuration
         );
 
-      logSelectedTrack(
-        'CANDIDATO FINAL SOLO TÍTULO',
-        bestTitleCandidate,
-        cleanTitle,
-        cleanArtist,
-        safeDuration
-      );
-
-      if (bestTitleCandidate) {
-        console.log(
-          '[LYRICS] 🎵 Candidato por título:',
-          {
-            id: bestTitleCandidate.id,
-            title:
-              bestTitleCandidate.trackName ||
-              bestTitleCandidate.name,
-            artist:
-              bestTitleCandidate.artistName,
-            album:
-              bestTitleCandidate.albumName,
-            duration:
-              bestTitleCandidate.duration,
-          }
+      const lyrics =
+        getLyricsFromTrack(
+          bestTitleCandidate
         );
 
-        const lyrics =
-          getLyricsFromTrack(
-            bestTitleCandidate
-          );
+      if (lyrics.length > 0) {
+        console.log(
+          '[LYRICS] ✅ Letras encontradas mediante fallback:',
+          lyrics.length
+        );
 
-        if (lyrics.length > 0) {
-          console.log(
-            '[LYRICS] ✅ Letras encontradas buscando solo por título:',
-            lyrics.length
-          );
-
-          return lyrics;
-        }
+        return lyrics;
       }
     }
 

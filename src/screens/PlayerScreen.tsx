@@ -64,6 +64,9 @@ type PlayerScreenProps = {
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
+// mantiene shuffle activo aunque PlayerScreen se vuelva a montar
+let persistedShuffleMode = false;
+
 export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
   const activeTrack = useActiveTrack();
   const { playing } = useIsPlaying();
@@ -110,7 +113,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     useState<'off' | 'all' | 'one'>('off');
 
   const [shuffleMode, setShuffleMode] =
-    useState(false);
+    useState(persistedShuffleMode);
 
   const [isMenuVisible, setIsMenuVisible] =
     useState(false);
@@ -132,6 +135,13 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
   const skipTrackId = useRef<string | null>(null);
   const autoNextTriggered = useRef(false);
   const isChangingTrack = useRef(false);
+
+  const handleNextRef =
+    useRef<(() => Promise<void>) | null>(null);
+  const handlePreviousRef =
+    useRef<(() => Promise<void>) | null>(null);
+  const getNextTrackForPlaybackRef =
+    useRef<(() => SwipePreviewTrack | null) | null>(null);
 
   const isSwipeTransitioningRef =
     useRef(false);
@@ -229,12 +239,42 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
           }
         );
 
-        const fetchedLyrics =
-          await fetchSyncedLyrics(
-            title,
-            artist,
-            trackDuration
+        /*
+         * Una búsqueda de letras no puede quedarse
+         * bloqueada indefinidamente.
+         *
+         * Si el servicio no responde dentro de este
+         * tiempo, mostramos "Letras no disponibles".
+         */
+        let lyricsTimeoutId:
+          ReturnType<typeof setTimeout> | null =
+          null;
+
+        const lyricsTimeout =
+          new Promise<LyricLine[]>(
+            resolve => {
+              lyricsTimeoutId =
+                setTimeout(() => {
+                  resolve([]);
+                }, 12000);
+            }
           );
+
+        const fetchedLyrics =
+          await Promise.race([
+            fetchSyncedLyrics(
+              title,
+              artist,
+              trackDuration
+            ),
+            lyricsTimeout,
+          ]);
+
+        if (lyricsTimeoutId !== null) {
+          clearTimeout(
+            lyricsTimeoutId
+          );
+        }
 
         if (cancelled) {
           return;
@@ -276,7 +316,6 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     activeTrack?.id,
     activeTrack?.title,
     activeTrack?.artist,
-    duration,
   ]);
 
   /*
@@ -320,6 +359,18 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
   const swipeOpacity =
     useRef(new Animated.Value(1)).current;
+
+  const lyricsTranslateY =
+    useRef(new Animated.Value(SCREEN_HEIGHT * 0.10)).current;
+
+  const lyricsOpacity =
+    useRef(new Animated.Value(0)).current;
+
+  const lyricsScale =
+    useRef(new Animated.Value(0.96)).current;
+
+  const gestureAxisRef =
+    useRef<'horizontal' | 'vertical' | null>(null);
 
   const incomingX =
     useRef(new Animated.Value(0)).current;
@@ -379,6 +430,90 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     entranceScale,
     entranceOpacity,
   ]);
+
+  const openLyricsWithAnimation = () => {
+    if (showLyrics) {
+      return;
+    }
+
+    lyricsTranslateY.stopAnimation();
+    lyricsOpacity.stopAnimation();
+    lyricsScale.stopAnimation();
+
+    lyricsTranslateY.setValue(
+      SCREEN_HEIGHT * 0.10
+    );
+    lyricsOpacity.setValue(0);
+    lyricsScale.setValue(0.96);
+
+    setShowLyrics(true);
+
+    requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(lyricsTranslateY, {
+          toValue: 0,
+          duration: 150,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(lyricsOpacity, {
+          toValue: 1,
+          duration: 150,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.spring(lyricsScale, {
+          toValue: 1,
+          tension: 65,
+          friction: 9,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  const closeLyricsWithAnimation = () => {
+    if (!showLyrics) {
+      return;
+    }
+
+    lyricsTranslateY.stopAnimation();
+    lyricsOpacity.stopAnimation();
+    lyricsScale.stopAnimation();
+
+    Animated.parallel([
+      Animated.timing(lyricsTranslateY, {
+        toValue: SCREEN_HEIGHT * 0.10,
+        duration: 150,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(lyricsOpacity, {
+        toValue: 0,
+        duration: 150,
+        easing: Easing.in(Easing.inOut(Easing.quad)),
+        useNativeDriver: true,
+      }),
+      Animated.timing(lyricsScale, {
+        toValue: 0.97,
+        duration: 150,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setShowLyrics(false);
+      }
+    });
+  };
+
+  const toggleLyrics = () => {
+    if (showLyrics) {
+      closeLyricsWithAnimation();
+    } else {
+      openLyricsWithAnimation();
+    }
+  };
 
   const resetSwipe = () => {
     Animated.parallel([
@@ -456,9 +591,13 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
   ) => {
     try {
       if (direction === 'next') {
-        await handleNext();
+        if (handleNextRef.current) {
+          await handleNextRef.current();
+        }
       } else {
-        await handlePrevious();
+        if (handlePreviousRef.current) {
+          await handlePreviousRef.current();
+        }
       }
     } catch (error) {
       console.warn(
@@ -489,6 +628,8 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         true,
 
       onPanResponderGrant: () => {
+        gestureAxisRef.current = null;
+
         swipeX.stopAnimation();
         swipeY.stopAnimation();
         swipeScale.stopAnimation();
@@ -503,15 +644,33 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         _evt,
         gestureState
       ) => {
-        const { dx } =
-          gestureState;
+        const { dx, dy } = gestureState;
+
+        const distance =
+          Math.max(Math.abs(dx), Math.abs(dy));
+
+        if (
+          gestureAxisRef.current === null &&
+          distance > 8
+        ) {
+          gestureAxisRef.current =
+            Math.abs(dx) >= Math.abs(dy)
+              ? 'horizontal'
+              : 'vertical';
+        }
+
+        if (
+          gestureAxisRef.current !==
+          'horizontal'
+        ) {
+          return;
+        }
 
         swipeX.setValue(dx);
 
         const progress =
           Math.min(
-            Math.abs(dx) /
-            SCREEN_WIDTH,
+            Math.abs(dx) / SCREEN_WIDTH,
             1
           );
 
@@ -528,128 +687,43 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
         _evt,
         gestureState
       ) => {
-        const { dx } =
-          gestureState;
+        const { dx, dy } = gestureState;
+        const axis = gestureAxisRef.current;
 
-        const SWIPE_DISTANCE =
-          SCREEN_WIDTH * 0.15;
+        gestureAxisRef.current = null;
 
-        if (
-          dx >
-          SWIPE_DISTANCE
-        ) {
-          const targetTrack =
-            getNextTrack();
+        if (axis === 'vertical') {
+          const VERTICAL_DISTANCE =
+            SCREEN_HEIGHT * 0.10;
 
-          if (!targetTrack) {
-            resetSwipe();
+          if (
+            dy < -VERTICAL_DISTANCE
+          ) {
+            openLyricsWithAnimation();
             return;
           }
 
-          isSwipeTransitioningRef.current =
-            true;
-
-          swipeDirectionRef.current =
-            'next';
-
-          incomingX.setValue(
-            -SCREEN_WIDTH
-          );
-
-          incomingScale.setValue(
-            0.985
-          );
-
-          incomingOpacity.setValue(
-            1
-          );
-
-          setSwipePreviewTrack(
-            targetTrack
-          );
-
-          requestAnimationFrame(() => {
-            Animated.parallel([
-              Animated.timing(
-                swipeX,
-                {
-                  toValue:
-                    SCREEN_WIDTH,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                swipeScale,
-                {
-                  toValue: 0.975,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                swipeOpacity,
-                {
-                  toValue: 0.96,
-                  duration: 180,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                incomingX,
-                {
-                  toValue: 0,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                incomingScale,
-                {
-                  toValue: 1,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-            ]).start(() => {
-              requestAnimationFrame(() => {
-                changeTrackWithSwipe(
-                  'next'
-                );
-              });
-            });
-          });
+          if (
+            dy > VERTICAL_DISTANCE
+          ) {
+            closePlayerWithAnimation();
+            return;
+          }
 
           return;
         }
 
+        if (axis !== 'horizontal') {
+          resetSwipe();
+          return;
+        }
+
+        const SWIPE_DISTANCE =
+          SCREEN_WIDTH * 0.15;
+
+        // izquierda -> derecha = anterior
         if (
-          dx <
-          -SWIPE_DISTANCE
+          dx > SWIPE_DISTANCE
         ) {
           const targetTrack =
             getPreviousTrack();
@@ -666,16 +740,14 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
             'previous';
 
           incomingX.setValue(
-            SCREEN_WIDTH
+            -SCREEN_WIDTH
           );
 
           incomingScale.setValue(
             0.985
           );
 
-          incomingOpacity.setValue(
-            1
-          );
+          incomingOpacity.setValue(1);
 
           setSwipePreviewTrack(
             targetTrack
@@ -683,76 +755,115 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
           requestAnimationFrame(() => {
             Animated.parallel([
-              Animated.timing(
-                swipeX,
-                {
-                  toValue:
-                    -SCREEN_WIDTH,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                swipeScale,
-                {
-                  toValue: 0.975,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                swipeOpacity,
-                {
-                  toValue: 0.96,
-                  duration: 180,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                incomingX,
-                {
-                  toValue: 0,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
-
-              Animated.timing(
-                incomingScale,
-                {
-                  toValue: 1,
-                  duration: 200,
-                  easing:
-                    Easing.out(
-                      Easing.cubic
-                    ),
-                  useNativeDriver: true,
-                }
-              ),
+              Animated.timing(swipeX, {
+                toValue: SCREEN_WIDTH,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(swipeScale, {
+                toValue: 0.975,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(swipeOpacity, {
+                toValue: 0.96,
+                duration: 180,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(incomingX, {
+                toValue: 0,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(incomingScale, {
+                toValue: 1,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
             ]).start(() => {
               requestAnimationFrame(() => {
-                changeTrackWithSwipe(
-                  'previous'
-                );
+                changeTrackWithSwipe('previous');
+              });
+            });
+          });
+
+          return;
+        }
+
+        // derecha -> izquierda = siguiente
+        if (
+          dx < -SWIPE_DISTANCE
+        ) {
+          const targetTrack =
+            getNextTrackForPlaybackRef.current
+              ? getNextTrackForPlaybackRef.current()
+              : null;
+
+          if (!targetTrack) {
+            resetSwipe();
+            return;
+          }
+
+          isSwipeTransitioningRef.current =
+            true;
+
+          swipeDirectionRef.current =
+            'next';
+
+          incomingX.setValue(
+            SCREEN_WIDTH
+          );
+
+          incomingScale.setValue(
+            0.985
+          );
+
+          incomingOpacity.setValue(1);
+
+          setSwipePreviewTrack(
+            targetTrack
+          );
+
+          requestAnimationFrame(() => {
+            Animated.parallel([
+              Animated.timing(swipeX, {
+                toValue: -SCREEN_WIDTH,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(swipeScale, {
+                toValue: 0.975,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(swipeOpacity, {
+                toValue: 0.96,
+                duration: 180,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(incomingX, {
+                toValue: 0,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+              Animated.timing(incomingScale, {
+                toValue: 1,
+                duration: 200,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+            ]).start(() => {
+              requestAnimationFrame(() => {
+                changeTrackWithSwipe('next');
               });
             });
           });
@@ -764,6 +875,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       },
 
       onPanResponderTerminate: () => {
+        gestureAxisRef.current = null;
         resetSwipe();
       },
 
@@ -864,7 +976,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       return;
     }
 
-    if (position <= 0.25) {
+    if (position > 0.25) {
       waitingForNewTrackPosition.current = false;
 
       setTrackPositionOverride(null);
@@ -1111,6 +1223,64 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
     position,
     visualSeekPosition,
   ]);
+
+  const getNextTrackForPlayback = () => {
+    const queue = getPlayerQueue();
+
+    if (queue.length === 0) {
+      return null;
+    }
+
+    const currentId =
+      activeTrack?.id ||
+      activeTrackRef.current?.id;
+
+    const currentIndex =
+      queue.findIndex(
+        track => track.id === currentId
+      );
+
+    if (
+      shuffleMode &&
+      queue.length > 1 &&
+      currentIndex !== -1
+    ) {
+      if (
+        shuffleOrderRef.current.length !==
+          queue.length ||
+        !shuffleOrderRef.current.includes(
+          currentIndex
+        )
+      ) {
+        createShuffleOrder(
+          queue.length,
+          currentIndex
+        );
+      }
+
+      let nextPosition =
+        shufflePositionRef.current + 1;
+
+      if (
+        nextPosition >=
+        shuffleOrderRef.current.length
+      ) {
+        createShuffleOrder(
+          queue.length,
+          currentIndex
+        );
+
+        nextPosition = 1;
+      }
+
+      const nextIndex =
+        shuffleOrderRef.current[nextPosition];
+
+      return queue[nextIndex] || null;
+    }
+
+    return getNextTrack();
+  };
 
   const createShuffleOrder = (
     queueLength: number,
@@ -1477,6 +1647,11 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
       }
     };
 
+  handleNextRef.current = handleNext;
+  handlePreviousRef.current = handlePrevious;
+  getNextTrackForPlaybackRef.current =
+    getNextTrackForPlayback;
+
   const handleRepeat =
     () => {
       setRepeatMode(
@@ -1612,11 +1787,7 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
               showLyrics &&
               styles.pillButtonLyrics,
             ]}
-            onPress={() => {
-              setShowLyrics(
-                current => !current
-              );
-            }}
+            onPress={toggleLyrics}
           >
             <Text
               style={styles.pillText}
@@ -1650,24 +1821,37 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
 
         <View
           style={styles.middleSection}
+          {...(!isPreview && !showLyrics
+            ? panResponder.panHandlers
+            : {})}
         >
           {showLyrics &&
             !isPreview && (
-              <SyncedLyricsView
-                lyrics={lyrics}
-                currentTime={
-                  lyricsCurrentTime
-                }
-                loading={lyricsLoading}
-              />
-            )}
-
-          {!isPreview &&
-            !showLyrics && (
-              <View
-                style={styles.swipeArea}
-                {...panResponder.panHandlers}
-              />
+              <Animated.View
+                style={[
+                  styles.lyricsAnimatedContainer,
+                  {
+                    opacity: lyricsOpacity,
+                    transform: [
+                      {
+                        translateY:
+                          lyricsTranslateY,
+                      },
+                      {
+                        scale: lyricsScale,
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <SyncedLyricsView
+                  lyrics={lyrics}
+                  currentTime={
+                    lyricsCurrentTime
+                  }
+                  loading={lyricsLoading}
+                />
+              </Animated.View>
             )}
         </View>
 
@@ -1952,6 +2136,9 @@ export const PlayerScreen = ({ onClose }: PlayerScreenProps) => {
                   current => {
                     const newValue =
                       !current;
+
+                    persistedShuffleMode =
+                      newValue;
 
                     if (!newValue) {
                       shuffleOrderRef.current =
@@ -2514,6 +2701,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+
+  lyricsAnimatedContainer: {
+    flex: 1,
   },
 
   bottomSection: {
